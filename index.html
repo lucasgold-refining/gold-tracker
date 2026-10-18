@@ -72,6 +72,7 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .quote .subs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .quote .subs div{background:#fff;border-radius:10px;padding:8px}
 .quote .subs b{display:block;font-size:19px}
+.quote .subs.one{grid-template-columns:1fr}
 .rule{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:#fff;color:var(--brown);border:1px solid var(--goldline)}
 .bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
 .bq:last-child{border-bottom:0}
@@ -193,7 +194,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -496,8 +497,7 @@ function qOutHTML(v) {
   const q = quoteFor(p);
   return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
     <div class="price" id="qPrice">${peso(q.perBhy)}</div>
-    <div class="subs"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div><div><small>Reference per BHY</small><b id="qRef">${peso(q.refBhy)}</b></div></div>
-    <span class="rule">${ruleTxt(q)}</span>${offTxt()}</div>`;
+    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}</div>`;
 }
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(when(lastSync))}</div>` : '';
 function bqHTML() {
