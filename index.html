@@ -73,6 +73,9 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .quote .subs div{background:#fff;border-radius:10px;padding:8px}
 .quote .subs b{display:block;font-size:19px}
 .quote .subs.one{grid-template-columns:1fr}
+/* Fine print for Iyam only: small, light grey (about 2.4:1 on the quote and page backgrounds), hard to read from across the counter. */
+.fine{font-size:11px;line-height:1.35;font-weight:400;color:#a8a294;text-align:center;margin-top:2px}
+.fine b{font-weight:400}
 .rule{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:#fff;color:var(--brown);border:1px solid var(--goldline)}
 .bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
 .bq:last-child{border-bottom:0}
@@ -194,7 +197,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -487,7 +490,7 @@ function quoteHTML() {
     <div class="kbd desk-only">Press Enter to add to the batch</div>
   </div>
   <div class="card" id="bqCard">${bqHTML()}</div></div>
-  ${s ? `<div class="muted" style="text-align:center">Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${(s.margin * 100).toLocaleString('en-GB')}%) · 1 g = ${s.bhyPerGram} BHY</div>` : ''}`;
+  ${s ? `<div class="fine" id="qBaseLine">Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${(s.margin * 100).toLocaleString('en-GB')}%) · 1 g = ${s.bhyPerGram} BHY</div>` : ''}`;
 }
 function qOutHTML(v) {
   const p = toPurity(v);
@@ -497,6 +500,7 @@ function qOutHTML(v) {
   const q = quoteFor(p);
   return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
     <div class="price" id="qPrice">${peso(q.perBhy)}</div>
+    <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
     <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}</div>`;
 }
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(when(lastSync))}</div>` : '';
