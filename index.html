@@ -105,6 +105,8 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 .batch .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .batch .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:8px;font-size:15px}
 .batch .grid span{color:var(--muted)}
+.batch .grid>div{min-width:0}
+.batch .grid b{white-space:nowrap}
 .sale{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:16px}
 .sale:last-child{border-bottom:0}
 .empty{text-align:center;color:var(--muted);padding:22px 10px}
@@ -191,7 +193,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -221,6 +223,8 @@ function applyEye() {
 const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
 const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 const g3 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const g2 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const hasNum = v => v !== null && v !== undefined && v !== '' && isFinite(Number(v));
 const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const fmtDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return iso || ''; return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
@@ -675,7 +679,8 @@ function salesHTML() {
   const B = ST.batches || [];
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
     <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
-    <div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div><div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
+    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${g3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div>
+    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${g2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
     ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit)}</b></div>`
       : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit)}</b></div>`}</div>
     <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" onclick="openSale('${esc(b.id)}')">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')

@@ -1,5 +1,5 @@
 // Lucas Gold Tracker service worker. Bump CACHE on every release.
-const CACHE = 'gold-tracker-v4';
+const CACHE = 'gold-tracker-v5';
 const ASSETS = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
