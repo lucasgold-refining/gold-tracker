@@ -17,7 +17,17 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:17px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 button,input,select{font-family:inherit}
-header{background:var(--ink);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:10px}
+header{background:var(--ink);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.basepill{flex:1 1 0}
+.netbar{flex-basis:100%;order:9;border:0;border-radius:10px;min-height:44px;padding:8px 12px;font:inherit;font-size:15px;font-weight:800;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;background:#5a1f17;color:#fff}
+.netbar.sync{background:#3a3020;color:var(--gold2)}
+.netbar .go{margin-left:auto;font-weight:600;font-size:13px;opacity:.85;white-space:nowrap}
+.qcard{border:2px dashed var(--goldline);background:#fffbea}
+.item.q .no{font-size:20px;min-width:40px}
+.qerr{display:block;color:var(--red);font-size:14px;font-weight:700;margin-top:3px}
+.qhold{display:block;color:#8a5a00;font-size:14px;font-weight:700;margin-top:3px}
+.note{font-size:14px;color:var(--muted);margin:-6px 0 12px;text-align:center}
+.offq{margin-top:8px;font-size:14px;font-weight:700;color:#8a5a00}
 header h1{margin:0;font-size:19px;font-weight:800;white-space:nowrap}
 header h1 span{color:var(--gold2)}
 .basepill{margin-left:auto;text-align:right;line-height:1.15;min-width:0;border:0;background:#2e2615;color:#fff;border-radius:12px;padding:6px 10px;min-height:46px;cursor:pointer;font:inherit}
@@ -132,7 +142,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
   body{padding-left:230px}
   header{padding:12px 24px}
   header h1{display:none}
-  .basepill{margin-left:0;text-align:left;display:flex;gap:14px;align-items:baseline}
+  .basepill{margin-left:0;text-align:left;display:flex;gap:14px;align-items:baseline;flex:0 1 auto}
   .basepill small{max-width:none}
   #refreshBtn{margin-left:auto}
   nav{top:0;bottom:0;right:auto;width:230px;flex-direction:column;border-top:0;border-right:1px solid #3a3020;background:var(--ink);padding:0 12px 12px;gap:4px;z-index:7}
@@ -163,6 +173,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
   <button type="button" class="basepill" id="basePill" aria-label="Set base price" title="Set base price"><b>₱—</b><small>Not connected</small></button>
   <button class="hbtn" id="refreshBtn" title="Refresh from the sheet" aria-label="Refresh">⟳</button>
   <button class="hbtn" id="setBtn" title="Settings" aria-label="Settings">⚙️</button>
+  <button type="button" class="netbar hidden" id="netbar" onclick="go('stock')"></button>
 </header>
 <main id="app"></main>
 <nav>
@@ -176,8 +187,13 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 2;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote';
+const APP_VERSION = 3;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue';
+const OFFLINE_MSG = "You're offline. This needs internet.";
+const SYNC_EVERY_MS = 60000;
+// The sheet remembers a request ID for 10 minutes. After that, a retry of a purchase whose first try
+// may have reached the sheet is checked against Stock first instead of being sent blind.
+const DEDUPE_SAFE_MS = 9 * 60000;
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = n => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -218,44 +234,151 @@ let CFG = load(CFG_KEY) || { url: '', token: '' };
 let ST = load(CACHE_KEY);           // last state from the sheet (works offline for quotes)
 let BQ = load(BQ_KEY) || [];         // batch quote purities
 let lastSync = ST && ST._syncedAt ? ST._syncedAt : null, netErr = '', busy = false;
+let netDown = false;                 // last request could not reach the sheet
+const isOffline = () => !navigator.onLine || netDown;
 function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 const connected = () => !!(CFG.url && CFG.token);
 const S = () => (ST && ST.settings) || null;
 
 // ---------- API ----------
-async function api(action, data, isPost) {
+async function api(action, data, isPost, opt) {
+  opt = opt || {};
   if (!connected()) throw new Error('Set up the connection first (⚙️ Settings).');
-  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 45000);
+  if (!navigator.onLine) throw netError(false, false);
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), opt.timeout || 45000);
   let r;
   try {
     if (isPost) {
       r = await fetch(CFG.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action, token: CFG.token, rid: rid() }, data || {})), redirect: 'follow', signal: ctl.signal });
+        body: JSON.stringify(Object.assign({ action, token: CFG.token, rid: opt.rid || rid() }, data || {})), redirect: 'follow', signal: ctl.signal });
     } else {
       const q = new URLSearchParams(Object.assign({ action, token: CFG.token, t: Date.now() }, data || {}));
       r = await fetch(CFG.url + (CFG.url.includes('?') ? '&' : '?') + q, { redirect: 'follow', cache: 'no-store', signal: ctl.signal });
     }
-  } catch (e) { throw new Error(e.name === 'AbortError' ? 'The sheet took too long to answer. Check your internet and try again.' : 'Could not reach the sheet. Check your internet connection.'); }
+  } catch (e) { throw netError(true, e.name === 'AbortError'); }
   finally { clearTimeout(tm); }
-  let j; try { j = await r.json(); } catch (e) { throw new Error('The sheet answered with something unexpected (HTTP ' + r.status + '). Check the web app URL in Settings.'); }
+  if (r.status >= 500 || r.status === 408 || r.status === 429) throw netError(true, false);
+  let j; try { j = await r.json(); } catch (e) { if (e.name === 'AbortError' || e.name === 'TypeError') throw netError(true, false); throw new Error('The sheet answered with something unexpected (HTTP ' + r.status + '). Check the web app URL in Settings.'); }
+  netDown = false;
   if (!j.ok) { const err = new Error(j.error || 'Something went wrong.'); err.auth = j.auth === false; throw err; }
   if (j.state) setState(j.state);
   return j;
+}
+// A network failure (offline, no answer, timeout). sent = the request may have reached the sheet.
+function netError(sent, timeout) {
+  netDown = true;
+  const e = new Error(!navigator.onLine ? OFFLINE_MSG : timeout ? 'The sheet took too long to answer. Check your internet and try again.' : 'Could not reach the sheet. Check your internet connection.');
+  e.net = true; e.sent = !!sent; return e;
 }
 function setState(s) { s._syncedAt = new Date().toISOString(); ST = s; lastSync = s._syncedAt; netErr = ''; save(CACHE_KEY, s); }
 async function refresh(quiet) {
   if (!connected() || busy) return;
   busy = true; $('#refreshBtn').classList.add('spin');
-  try { await api('getState'); if (!quiet) toast('Updated from the sheet'); }
-  catch (e) { netErr = e.message; if (!quiet) toast(e.message, 4000); }
+  try {
+    const n = pendingQ().length ? await syncQueue({ noRefresh: true }) : 0;
+    await api('getState'); if (!quiet && !n) toast('Updated from the sheet');   // keep the "Synced N" toast
+  }
+  catch (e) { if (e.net) { netErr = ''; if (!quiet) toast(navigator.onLine ? e.message : "You're offline. Showing what was saved " + when(lastSync) + '.', 4000); } else { netErr = e.message; if (!quiet) toast(e.message, 4000); } }
   finally { busy = false; $('#refreshBtn').classList.remove('spin'); render(); }
 }
 async function write(action, data, btn) {
+  if (!navigator.onLine) { alert(OFFLINE_MSG); render(); return null; }
   if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = 'Saving…'; }
   try { const j = await api(action, data, true); return j; }
-  catch (e) { alert(e.message); return null; }
+  catch (e) { alert(e.net ? (navigator.onLine ? e.message : OFFLINE_MSG) : e.message); if (e.net) render(); return null; }
   finally { if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = btn._t; } }
+}
+
+// ---------- offline queue (purchases only) ----------
+// Each item: { rid, date, weightBhy, purity, cost, createdAt, tries, lastTry, uncertainAt, error, hold, force }
+// rid is made once at entry and reused on every retry, so the sheet's request-ID check stops a double save.
+let Q = load(Q_KEY) || [], syncing = false, inflight = '';
+const loadQ = () => { Q = load(Q_KEY) || []; return Q; };
+const saveQ = () => save(Q_KEY, Q);
+const pendingQ = () => Q.filter(x => !x.error && !x.hold);
+function qUpdate(r, fn) { loadQ(); const it = Q.find(x => x.rid === r); if (it) { fn(it); saveQ(); } return it; }
+function qRemove(r) { loadQ(); Q = Q.filter(x => x.rid !== r); saveQ(); }
+function enqueue(it) { loadQ(); if (!Q.some(x => x.rid === it.rid)) Q.push(it); saveQ(); }
+function stockMatch(it) {
+  return (ST && ST.stock || []).find(x => String(x.date) === String(it.date) && Math.abs((x.weightBhy || 0) - it.weightBhy) < 1e-6
+    && Math.abs((x.purity || 0) - it.purity) < 1e-7 && Math.abs((x.cost || 0) - it.cost) < 0.005);
+}
+async function syncQueue(opt) {
+  opt = opt || {};
+  if (syncing || !connected() || !loadQ().length) return 0;
+  if (!navigator.onLine) { render(); return 0; }
+  syncing = true; renderNet();
+  let done = 0;
+  const run = async () => {
+    for (const r0 of loadQ().map(x => x.rid)) {
+      const it = loadQ().find(x => x.rid === r0);
+      if (!it || it.error || it.hold) continue;
+      // First try may have reached the sheet long ago (its request-ID memory has expired): check Stock first.
+      if (it.uncertainAt && !it.force && Date.now() - it.uncertainAt > DEDUPE_SAFE_MS) {
+        try { await api('getState'); } catch (e) { if (e.net) break; netErr = e.message; break; }
+        const m = stockMatch(it);
+        if (m) { qUpdate(r0, x => { x.hold = `May already be saved as #${m.no} (same date, weight, purity and cost). Check Stock, then delete this or tap Send anyway.`; }); continue; }
+      }
+      qUpdate(r0, x => { x.tries = (x.tries || 0) + 1; x.lastTry = Date.now(); });
+      inflight = r0; renderNet();
+      try {
+        await api('addPurchase', { date: it.date, weightBhy: it.weightBhy, purity: it.purity, cost: it.cost }, true, { rid: it.rid, timeout: 45000 });
+        qRemove(r0); done++;                          // ok, or duplicate rid = already saved
+      } catch (e) {
+        if (e.net) { qUpdate(r0, x => { if (e.sent && !x.uncertainAt) x.uncertainAt = Date.now(); }); break; }
+        if (e.auth) { netErr = e.message; break; }    // bad token: keep everything, fix in Settings
+        qUpdate(r0, x => { x.error = e.message; x.uncertainAt = null; });
+      } finally { inflight = ''; }
+    }
+  };
+  try {
+    if (navigator.locks && navigator.locks.request) await navigator.locks.request('gold-tracker-sync', { ifAvailable: true }, async lock => { if (lock) await run(); });
+    else await run();
+  } finally { syncing = false; }
+  if (done) {
+    if (!opt.noRefresh) { try { await api('getState'); } catch (e) {} }
+    toast(`Synced ${done} purchase${done === 1 ? '' : 's'} ✓`, 3500);
+  }
+  render(); return done;
+}
+function qDel(r) {
+  const it = loadQ().find(x => x.rid === r); if (!it) return;
+  if (inflight === r) return toast('Sending this one now. Try again in a moment.');
+  if (!confirm(`Delete this unsynced purchase?\n${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)} · ${fmtDate(it.date)}\n\nIt has not reached the sheet${it.uncertainAt ? ' (or may have, check Stock)' : ''}.`)) return;
+  qRemove(r); render(); toast('Deleted');
+}
+function qRetry(r, force) { qUpdate(r, x => { x.error = ''; x.hold = ''; if (force) x.force = true; }); render(); syncQueue(); }
+function qEdit(r) {
+  const it = loadQ().find(x => x.rid === r); if (!it) return;
+  if (inflight === r) return toast('Sending this one now. Try again in a moment.');
+  modal(`<h2>Edit unsynced purchase</h2>${it.error ? `<div class="banner err">${esc(it.error)}</div>` : ''}
+    <div class="row2"><div><label for="qw">Weight (BHY)</label><input id="qw" type="text" inputmode="decimal" value="${esc(it.weightBhy)}"></div>
+    <div><label for="qpp">Purity %</label><input id="qpp" type="text" inputmode="decimal" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
+    <label for="qc">Cost (₱)</label><input id="qc" type="text" inputmode="decimal" value="${esc(it.cost)}">
+    <label for="qd">Date</label><input id="qd" type="date" value="${esc(it.date)}">
+    <button class="btn" id="qsave">Save &amp; sync</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  $('#qsave').onclick = () => {
+    const w = parseNum($('#qw').value), p = toPurity($('#qpp').value), c = parseNum($('#qc').value), d = $('#qd').value;
+    if (!(w > 0)) return toast('Enter the weight in BHY'); if (p === null || isNaN(p)) return toast('Enter a valid purity'); if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('Pick the date');
+    qUpdate(r, x => { x.weightBhy = w; x.purity = p; x.cost = c; x.date = d; x.error = ''; x.hold = ''; });
+    closeModal(); render(); toast(navigator.onLine ? 'Saved. Syncing…' : 'Saved offline. Will sync when back online'); syncQueue();
+  };
+}
+function renderNet() {
+  const el = $('#netbar'); if (!el) return;
+  loadQ(); const n = Q.length, bad = Q.filter(x => x.error || x.hold).length;
+  const off = !navigator.onLine, down = !off && netDown;
+  if (!connected() || (!n && !off && !down)) { el.classList.add('hidden'); return; }
+  let t;
+  if (syncing && !off) t = `⟳ Syncing ${pendingQ().length || n} purchase${(pendingQ().length || n) === 1 ? '' : 's'}…`;
+  else if (off) t = n ? `📴 Offline. ${n} waiting to sync` : `📴 Offline. Showing data from ${when(lastSync)}`;
+  else if (down) t = n ? `⚠️ Can't reach the sheet. ${n} waiting to sync` : `⚠️ Can't reach the sheet. Showing data from ${when(lastSync)}`;
+  else t = bad ? `⚠️ ${n} waiting to sync · ${bad} need${bad === 1 ? 's' : ''} attention` : `⏳ ${n} waiting to sync`;
+  el.innerHTML = esc(t) + (n ? '<span class="go">View ›</span>' : '');
+  el.classList.toggle('sync', !off && !down);
+  el.classList.remove('hidden');
 }
 
 // ---------- quote (same rules as the sheet) ----------
@@ -289,7 +412,7 @@ function when(iso) { if (!iso) return 'earlier'; const d = new Date(iso); return
 function needData() { return !ST ? `<div class="card empty">${connected() ? 'Loading from the sheet…' : 'Connect the app to your sheet to see this.'}</div>` : ''; }
 
 function render() {
-  header();
+  header(); renderNet();
   const app = $('#app');
   const top = banners();
   if (view === 'quote') { app.innerHTML = top + quoteHTML(); bindQuote(); }
@@ -317,14 +440,15 @@ function quoteHTML() {
 function qOutHTML(v) {
   const p = toPurity(v);
   if (!S()) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price">₱—</div><div class="muted">Connect the app to load today's base price.</div></div>`;
-  if (p === null) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price">₱—</div><div class="muted">Type a purity above</div></div>`;
+  if (p === null) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price">₱—</div><div class="muted">Type a purity above</div>${offTxt()}</div>`;
   if (isNaN(p)) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price" style="font-size:22px">Enter a purity like 87.1 or 0.871</div></div>`;
   const q = quoteFor(p);
   return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
     <div class="price" id="qPrice">${peso(q.perBhy)}</div>
     <div class="subs"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div><div><small>Reference per BHY</small><b id="qRef">${peso(q.refBhy)}</b></div></div>
-    <span class="rule">${ruleTxt(q)}</span></div>`;
+    <span class="rule">${ruleTxt(q)}</span>${offTxt()}</div>`;
 }
+const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(when(lastSync))}</div>` : '';
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
   const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
@@ -351,7 +475,7 @@ function bqClear() { if (!BQ.length || !confirm('Clear the batch quote list?')) 
 let buyDraft = { date: '', weightBhy: '', purity: '', cost: '' };
 function buyHTML() {
   const d = buyDraft;
-  return `<div class="two"><div class="card"><h2>New purchase <span class="muted">next #${esc(ST.nextNo)}</span></h2>
+  return `<div class="two"><div class="card"><h2>New purchase <span class="muted" id="nextNo">${Q.length || isOffline() ? 'No. given when synced' : 'next #' + esc(ST.nextNo)}</span></h2>
     <div class="row2">
       <div><label for="bw">Weight (BHY)</label><input id="bw" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.weightBhy)}" placeholder="0.00"></div>
       <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.purity)}" placeholder="85.35"></div>
@@ -360,12 +484,12 @@ function buyHTML() {
     <label for="bc">Cost (₱)</label><input id="bc" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.cost)}" placeholder="0.00">
     <label for="bd">Date</label><input id="bd" type="date" value="${esc(d.date || todayISO())}">
     <button class="btn" id="bsave">Save purchase</button>
-    <div class="muted" style="margin-top:8px">Saved as In stock on the Purchases tab.</div></div>
+    <div class="muted" style="margin-top:8px">${isOffline() ? 'Offline: saved on this device and sent to the sheet when the internet is back.' : 'Saved as In stock on the Purchases tab.'}</div></div>
     <div class="card desk-only"><h2>Last added</h2>${lastAddedHTML()}</div></div>`;
 }
 function lastAddedHTML() {
   const L = (ST.stock || []).slice().sort((a, b) => (b.no || 0) - (a.no || 0)).slice(0, 6);
-  return L.length ? L.map(itemRowHTML).join('') : '<div class="empty">No items in stock.</div>';
+  return Q.length || L.length ? Q.slice().reverse().map(qRowHTML).join('') + L.map(itemRowHTML).join('') : '<div class="empty">No items in stock.</div>';
 }
 function buyHint() {
   const el = $('#bhint'); if (!el) return;
@@ -384,10 +508,20 @@ async function savePurchase() {
   if (!(w > 0)) return toast('Enter the weight in BHY');
   if (p === null || isNaN(p)) return toast('Enter a purity like 85.35 or 0.8535');
   if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
-  const j = await write('addPurchase', { date: d, weightBhy: w, purity: p, cost: c }, $('#bsave'));
-  if (!j) return;
-  buyDraft = { date: d, weightBhy: '', purity: '', cost: '' };
-  render(); toast(j.message || 'Saved ✓'); const el = $('#bw'); if (el) el.focus();
+  if (!connected()) return openSettings();
+  // The date is fixed now (entry time), so a purchase synced later keeps the day it was bought.
+  const item = { rid: rid(), date: d, weightBhy: w, purity: p, cost: c, createdAt: new Date().toISOString(), tries: 0 };
+  const done = (msg, ms) => { buyDraft = { date: d, weightBhy: '', purity: '', cost: '' }; render(); toast(msg, ms); const el = $('#bw'); if (el) el.focus(); };
+  if (!navigator.onLine) { enqueue(item); return done('Saved offline. Will sync when back online', 3500); }
+  if (loadQ().some(x => !x.error && !x.hold)) { enqueue(item); done('Saved. Syncing…'); syncQueue(); return; }   // keep the order
+  const btn = $('#bsave'); btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const j = await api('addPurchase', { date: d, weightBhy: w, purity: p, cost: c }, true, { rid: item.rid, timeout: 30000 });
+    done(j.message || 'Saved ✓');
+  } catch (e) {
+    if (e.net) { if (e.sent) item.uncertainAt = Date.now(); enqueue(item); return done('Saved offline. Will sync when back online', 3500); }
+    alert(e.message); if (document.body.contains(btn)) { btn.disabled = false; btn.textContent = 'Save purchase'; }
+  }
 }
 
 // Stock
@@ -396,15 +530,32 @@ function itemRowHTML(it) {
     <span class="muted">Cost ${peso(it.cost)} · Profit <b>${prof(it.projProfit)}</b></span></div>
     <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
 }
+function qRowHTML(it) {
+  const busyNow = inflight === it.rid;
+  return `<div class="item q" data-rid="${esc(it.rid)}"><span class="no" aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
+    <span class="muted">Cost ${peso(it.cost)} · ${esc(fmtDate(it.date))}${busyNow ? ' · sending…' : ''}</span>
+    ${it.error ? `<span class="qerr">Sheet said: ${esc(it.error)}</span>` : ''}${it.hold ? `<span class="qhold">${esc(it.hold)}</span>` : ''}</div>
+    <div class="acts">${it.error ? `<button class="ed" aria-label="Retry" title="Retry" onclick="qRetry('${esc(it.rid)}')">↻</button>` : ''}${it.hold ? `<button class="ed" aria-label="Send anyway" title="Send anyway" onclick="qRetry('${esc(it.rid)}',true)">⤴</button>` : ''}<button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button><button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></div></div>`;
+}
+function queueHTML() {
+  loadQ(); if (!Q.length) return '';
+  return `<div class="card qcard" id="qCard"><h2><span>⏳ Waiting to sync (${Q.length})</span>${navigator.onLine && !syncing ? `<button class="btn sm gold" onclick="syncQueue()">Sync now</button>` : ''}</h2>
+    <div class="muted">Saved on this device${navigator.onLine ? '' : ' while offline'}. Each gets its No. when it reaches the sheet.</div>${Q.map(qRowHTML).join('')}</div>`;
+}
+function refineBtnHTML(n) {
+  const why = Q.length ? `Wait until the ${Q.length} unsynced purchase${Q.length === 1 ? ' is' : 's are'} in the sheet so the batch doesn't miss ${Q.length === 1 ? 'it' : 'them'}.`
+    : isOffline() ? (navigator.onLine ? "Can't reach the sheet. Batch refine needs internet." : "You're offline. Batch refine needs internet.") : '';
+  return `<button class="btn gold" id="refineBtn" style="margin:0 0 12px" onclick="openRefine()"${why ? ' disabled' : ''}>🔥 Batch refine all ${n} items</button>${why ? `<div class="note" id="refineNote">${esc(why)}</div>` : ''}`;
+}
 function stockHTML() {
   const L = (ST.stock || []).slice().sort((a, b) => (a.no || 0) - (b.no || 0));
-  if (!L.length) return `<div class="card empty">No items in stock.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
+  if (!L.length) return queueHTML() + `<div class="card empty">No items in stock${Q.length ? ' in the sheet yet' : ''}.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
   const tc = L.reduce((t, x) => t + (x.cost || 0), 0), tp = L.reduce((t, x) => t + (x.projProfit || 0), 0), tw = L.reduce((t, x) => t + (x.weightBhy || 0), 0);
   const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
     ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit)}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}
     <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td><b>${prof(tp)}</b></td><td></td></tr></tbody></table>`;
-  return `<button class="btn gold" id="refineBtn" style="margin:0 0 12px" onclick="openRefine()">🔥 Batch refine all ${L.length} items</button>
+  return queueHTML() + refineBtnHTML(L.length) + `
     <div class="card"><h2><span>In stock <span class="muted">${L.length} items</span></span>${eyeBtn()}</h2>
     ${table}<div class="mobile-only">${L.map(itemRowHTML).join('')}</div></div>`;
 }
@@ -433,8 +584,10 @@ async function delItem(no) {
   const j = await write('deletePurchase', { no }); if (j) { render(); toast(j.message); }
 }
 async function openRefine() {
+  if (loadQ().length) { render(); return alert('Some purchases are still waiting to sync. Sync them (or delete them) first so the batch includes everything.'); }
+  if (!navigator.onLine) { render(); return alert(OFFLINE_MSG); }
   const btn = $('#refineBtn'); if (btn) { btn.disabled = true; btn.textContent = 'Checking totals…'; }
-  let j; try { j = await api('batchPreview'); } catch (e) { alert(e.message); render(); return; }
+  let j; try { j = await api('batchPreview'); } catch (e) { alert(e.net && !navigator.onLine ? OFFLINE_MSG : e.message); render(); return; }
   render(); const p = j.preview;
   if (!p.count) return toast('No items in stock');
   modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${p.count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>
@@ -452,6 +605,7 @@ async function openRefine() {
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
     <button class="btn gold" id="rgo">Refine ${p.count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   $('#rgo').onclick = async () => {
+    if (loadQ().length) { closeModal(); render(); return alert('A purchase is waiting to sync. Sync it first so the batch includes it.'); }
     const r = await write('batchRefine', { batchId: $('#rid').value.trim(), expectNos: p.nos }, $('#rgo'));
     if (r) { closeModal(); go('sales'); toast(r.message, 4000); }
   };
@@ -590,9 +744,16 @@ async function setupFromHash() {
 }
 window.addEventListener('hashchange', () => { if (/^#setup=/.test(location.hash)) setupFromHash(); else { const v = (location.hash.match(/^#(quote|buy|stock|sales|dash)$/) || [])[1]; if (v) go(v); } });
 window.addEventListener('focus', () => { if (connected() && lastSync && Date.now() - new Date(lastSync).getTime() > 60000) refresh(true); });
+window.addEventListener('online', () => { netDown = false; render(); if (connected()) refresh(true); });   // refresh syncs the queue first
+window.addEventListener('offline', () => render());
+window.addEventListener('storage', e => { if (e.key === Q_KEY) { loadQ(); if (!document.querySelector('#modal')) render(); else renderNet(); } });
+setInterval(() => {   // every 60 s: retry the queue, or check whether the sheet is reachable again
+  if (!connected() || !navigator.onLine || busy || syncing) return;
+  if (pendingQ().length) syncQueue(); else if (netDown) refresh(true);
+}, SYNC_EVERY_MS);
 document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
 render(); focusQuote();
-setupFromHash().then(done => { if (!done && connected()) refresh(true); });
+setupFromHash().then(done => { if (connected()) { if (!done) refresh(true); else if (pendingQ().length) syncQueue(); } });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
