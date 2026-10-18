@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#221c0e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gold Tracker">
+<title>Lucas Gold Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root{--ink:#221c0e;--gold:#d4a017;--gold2:#f5ce56;--goldbg:#fff6d6;--goldline:#e2bf55;--brown:#6b4f0e;--bg:#faf7ef;--card:#fff;--text:#1b1a17;--muted:#5d5a52;--line:#e7e1d2;--red:#b42318;--redbg:#fdecea;--green:#13753a;--greenbg:#e7f6ec;--blue:#1d4ed8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:17px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+button,input,select{font-family:inherit}
+header{background:var(--ink);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:10px}
+header h1{margin:0;font-size:19px;font-weight:800;white-space:nowrap}
+header h1 span{color:var(--gold2)}
+.basepill{margin-left:auto;text-align:right;line-height:1.15;min-width:0}
+.basepill b{display:block;color:var(--gold2);font-size:17px;white-space:nowrap}
+.basepill small{color:#d8d1bd;font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+.hbtn{border:0;background:#3a3020;color:#fff;border-radius:12px;min-width:46px;min-height:46px;font-size:20px;cursor:pointer}
+.hbtn.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+main{padding:14px 14px calc(100px + env(safe-area-inset-bottom));max-width:680px;margin:0 auto}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
+nav button{flex:1;border:0;background:none;padding:8px 2px 10px;font-size:12px;color:var(--muted);min-height:64px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}
+nav button .ic{font-size:22px;line-height:1}
+nav button.on{color:var(--ink);font-weight:800}
+nav button.on .ic{transform:scale(1.12)}
+nav button.on::after{content:"";display:block;width:28px;height:3px;border-radius:3px;background:var(--gold);margin-top:2px}
+.card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.07);border:1px solid #efe9da}
+.card h2{margin:0 0 10px;font-size:18px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.muted,small{color:var(--muted);font-size:14px}
+label{display:block;font-size:15px;font-weight:700;margin:12px 0 5px;color:#2f2b22}
+label .hint{font-weight:500;color:var(--muted);font-size:13px}
+input,select{width:100%;font-size:19px;padding:12px;border:2px solid #d6cfbd;border-radius:12px;background:#fff;min-height:54px;color:var(--text)}
+input:focus,select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,160,23,.25)}
+input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font-size:18px;font-weight:800;min-height:56px;margin-top:14px;background:var(--ink);color:#fff;cursor:pointer}
+.btn.gold{background:var(--gold);color:var(--ink)}
+.btn.light{background:#efe9da;color:var(--ink)}
+.btn.green{background:var(--green);color:#fff}
+.btn.danger{background:var(--redbg);color:var(--red)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.sm{display:inline-block;width:auto;min-height:44px;padding:8px 14px;margin:0;font-size:15px}
+.quote{background:var(--goldbg);border:2px solid var(--goldline);border-radius:14px;padding:16px;margin-top:14px;text-align:center}
+.quote .lbl{font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--brown)}
+.quote .price{font-size:44px;font-weight:900;color:#3d2c00;line-height:1.1;margin:4px 0 2px;word-break:break-all}
+.quote .price .u{font-size:17px;font-weight:700;color:var(--brown)}
+.quote .subs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.quote .subs div{background:#fff;border-radius:10px;padding:8px}
+.quote .subs b{display:block;font-size:19px}
+.rule{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:#fff;color:var(--brown);border:1px solid var(--goldline)}
+.bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
+.bq:last-child{border-bottom:0}
+.bq .n{min-width:34px;height:34px;border-radius:10px;background:var(--ink);color:var(--gold2);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:15px}
+.bq .p{flex:1}
+.bq .v{font-weight:900;font-size:19px;text-align:right}
+.bq .v small{display:block;font-weight:500;font-size:12px}
+.x{border:0;background:var(--redbg);color:var(--red);border-radius:10px;min-width:44px;min-height:44px;font-size:17px;cursor:pointer}
+.ed{border:0;background:#efe9da;border-radius:10px;min-width:46px;min-height:44px;font-size:18px;cursor:pointer}
+.item{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item .no{font-weight:900;min-width:52px;color:var(--brown)}
+.item .body{flex:1;min-width:0}
+.item .acts{display:flex;gap:6px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:16px}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:13px;color:var(--muted);font-weight:700;text-align:center;background:#fbf8f0}
+td:first-child{text-align:left;font-weight:800;color:var(--brown)}
+td.acts{text-align:right;width:120px}
+tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
+.tiles{display:grid;grid-template-columns:1fr;gap:12px}
+.tile{background:#fff;border-radius:14px;padding:16px;border:1px solid #efe9da;border-left:6px solid var(--gold);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.tile .lbl{font-size:14px;font-weight:700;color:var(--muted)}
+.tile .val{font-size:30px;font-weight:900;margin-top:2px;word-break:break-all}
+.tile.green{border-left-color:var(--green)}.tile.ink{border-left-color:var(--ink)}
+.badge{font-size:12px;padding:4px 9px;border-radius:99px;font-weight:800;white-space:nowrap;background:#fff4d6;color:#8a5a00}
+.badge.sold{background:var(--greenbg);color:var(--green)}
+.badge.warn{background:var(--redbg);color:var(--red)}
+.batch{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px}
+.batch .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.batch .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:8px;font-size:15px}
+.batch .grid span{color:var(--muted)}
+.sale{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:16px}
+.sale:last-child{border-bottom:0}
+.empty{text-align:center;color:var(--muted);padding:22px 10px}
+.banner{background:#fff4d6;color:#6b4800;border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:15px}
+.banner.err{background:var(--redbg);color:var(--red);border-color:#f4b4ae}
+.banner button{margin-left:6px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom));background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-size:16px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:40;max-width:92%;text-align:center}
+.toast.show{opacity:.94}
+.modal{position:fixed;inset:0;background:rgba(20,16,8,.55);z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.modal .sheet{background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:92vh;overflow:auto;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+.modal h2{margin:0 0 6px;font-size:20px}
+.sumlist{margin-top:8px}
+.sumlist div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:16px}
+.sumlist div b{white-space:nowrap}
+.sumlist div.big b{font-size:20px}
+.hidden{display:none!important}
+.kbd{font-size:12px;color:var(--muted);margin-top:6px;text-align:center}
+.calc{margin-top:8px;background:var(--goldbg);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;font-size:16px}
+.calc b{font-size:18px}
+.side-brand{display:none}
+@media (min-width:900px){
+  body{padding-left:230px}
+  header{padding:12px 24px}
+  header h1{display:none}
+  .basepill{margin-left:0;text-align:left;display:flex;gap:14px;align-items:baseline}
+  .basepill small{max-width:none}
+  .hbtn:first-of-type{margin-left:auto}
+  nav{top:0;bottom:0;right:auto;width:230px;flex-direction:column;border-top:0;border-right:1px solid #3a3020;background:var(--ink);padding:0 12px 12px;gap:4px;z-index:7}
+  .side-brand{display:block;color:#fff;font-weight:900;font-size:20px;padding:18px 8px 16px;border-bottom:1px solid #3a3020;margin-bottom:10px}
+  .side-brand span{color:var(--gold2)}
+  nav button{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;font-size:17px;color:#d8d1bd;min-height:54px;padding:0 14px;border-radius:12px}
+  nav button .ic{font-size:21px}
+  nav button.on{background:#3a3020;color:#fff}
+  nav button.on::after{display:none}
+  nav button:hover{background:#2f2718}
+  main{max-width:1100px;padding:24px 28px 40px}
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+  .tiles{grid-template-columns:1fr 1fr}
+  .quote .price{font-size:56px}
+  .toast{bottom:28px}
+  .modal{align-items:center}
+  .modal .sheet{border-radius:18px;max-height:88vh}
+  .mobile-only{display:none!important}
+}
+@media (max-width:899px){.desk-only{display:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Lucas <span>Gold</span></h1>
+  <div class="basepill" id="basePill"><b>₱—</b><small>Not connected</small></div>
+  <button class="hbtn" id="refreshBtn" title="Refresh from the sheet" aria-label="Refresh">⟳</button>
+  <button class="hbtn" id="setBtn" title="Settings" aria-label="Settings">⚙️</button>
+</header>
+<main id="app"></main>
+<nav>
+  <div class="side-brand">Lucas <span>Gold Tracker</span></div>
+  <button data-v="quote" class="on"><span class="ic">💰</span>Quote</button>
+  <button data-v="buy"><span class="ic">➕</span>Buy</button>
+  <button data-v="stock"><span class="ic">📦</span>Stock</button>
+  <button data-v="sales"><span class="ic">🔥</span>Refining</button>
+  <button data-v="dash"><span class="ic">📊</span>Dashboard</button>
+</nav>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const APP_VERSION = 1;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = n => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const peso = n => (n == null || isNaN(n)) ? '–' : (Number(n) < 0 ? '−₱' : '₱') + num(Math.abs(Number(n)));
+const sgn = n => n == null ? '' : (Number(n) < 0 ? 'neg' : 'pos');
+const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
+const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+const g3 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const fmtDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return iso || ''; return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
+const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+function toast(msg, ms) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms || 2600); }
+function parseNum(v) { const s = String(v == null ? '' : v).replace(/[,\s%₱]|PHP/gi, ''); if (s === '') return null; const n = Number(s); return isFinite(n) ? n : NaN; }
+function toPurity(v) { // 85.35, 85.35% or 0.8535 -> 0.8535 (same as the sheet)
+  const s = String(v == null ? '' : v).trim(); if (s === '') return null;
+  let n = parseNum(s); if (n === null || isNaN(n)) return NaN;
+  if (/%$/.test(s) || n > 1) n = n / 100;
+  return (n > 0 && n <= 1) ? n : NaN;
+}
+
+// ---------- config + cached state ----------
+let CFG = load(CFG_KEY) || { url: '', token: '' };
+let ST = load(CACHE_KEY);           // last state from the sheet (works offline for quotes)
+let BQ = load(BQ_KEY) || [];         // batch quote purities
+let lastSync = ST && ST._syncedAt ? ST._syncedAt : null, netErr = '', busy = false;
+function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+const connected = () => !!(CFG.url && CFG.token);
+const S = () => (ST && ST.settings) || null;
+
+// ---------- API ----------
+async function api(action, data, isPost) {
+  if (!connected()) throw new Error('Set up the connection first (⚙️ Settings).');
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 45000);
+  let r;
+  try {
+    if (isPost) {
+      r = await fetch(CFG.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action, token: CFG.token, rid: rid() }, data || {})), redirect: 'follow', signal: ctl.signal });
+    } else {
+      const q = new URLSearchParams(Object.assign({ action, token: CFG.token, t: Date.now() }, data || {}));
+      r = await fetch(CFG.url + (CFG.url.includes('?') ? '&' : '?') + q, { redirect: 'follow', cache: 'no-store', signal: ctl.signal });
+    }
+  } catch (e) { throw new Error(e.name === 'AbortError' ? 'The sheet took too long to answer. Check your internet and try again.' : 'Could not reach the sheet. Check your internet connection.'); }
+  finally { clearTimeout(tm); }
+  let j; try { j = await r.json(); } catch (e) { throw new Error('The sheet answered with something unexpected (HTTP ' + r.status + '). Check the web app URL in Settings.'); }
+  if (!j.ok) { const err = new Error(j.error || 'Something went wrong.'); err.auth = j.auth === false; throw err; }
+  if (j.state) setState(j.state);
+  return j;
+}
+function setState(s) { s._syncedAt = new Date().toISOString(); ST = s; lastSync = s._syncedAt; netErr = ''; save(CACHE_KEY, s); }
+async function refresh(quiet) {
+  if (!connected() || busy) return;
+  busy = true; $('#refreshBtn').classList.add('spin');
+  try { await api('getState'); if (!quiet) toast('Updated from the sheet'); }
+  catch (e) { netErr = e.message; if (!quiet) toast(e.message, 4000); }
+  finally { busy = false; $('#refreshBtn').classList.remove('spin'); render(); }
+}
+async function write(action, data, btn) {
+  if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = 'Saving…'; }
+  try { const j = await api(action, data, true); return j; }
+  catch (e) { alert(e.message); return null; }
+  finally { if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = btn._t; } }
+}
+
+// ---------- quote (same rules as the sheet) ----------
+function quoteFor(p) {
+  const s = S(); if (!s || !s.base || p == null || isNaN(p)) return null;
+  const bhy = s.bhyPerGram || 2, full = p + 1e-9 >= s.fullMin;
+  const perGram = full ? s.base : Math.max(0, s.base * (p - s.margin));
+  return { perGram, perBhy: perGram / bhy, refBhy: s.base * p / bhy, full };
+}
+const ruleTxt = q => { const s = S(); return q.full ? `Full base (${pct(s.fullMin).replace(/0+%$/, '%').replace(/\.%$/, '%')} and up)` : `Base × (purity − ${(s.margin * 100).toLocaleString('en-GB')}%)`; };
+
+// ---------- views ----------
+let view = (location.hash.match(/^#(quote|buy|stock|sales|dash)$/) || [])[1] || 'quote';
+function go(v) { view = v; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); window.scrollTo(0, 0); if (v === 'quote') focusQuote(); }
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => go(b.dataset.v));
+function focusQuote() { const el = $('#qp'); if (el && matchMedia('(min-width:900px)').matches) el.focus(); }
+
+function header() {
+  const s = S();
+  $('#basePill').innerHTML = s && s.base ? `<b>${peso(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span></b><small>${esc(ST.source || '')}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
+    : `<b>₱—</b><small>${connected() ? 'Loading…' : 'Not connected'}</small>`;
+}
+function banners() {
+  if (!connected()) return `<div class="banner">This app is not connected to your Gold Tracker sheet yet. <button class="btn sm gold" onclick="openSettings()">Set up</button></div>`;
+  if (netErr) return `<div class="banner err">${esc(netErr)}${ST ? `<br><small>Showing what was saved ${esc(when(lastSync))}. Quotes still work.</small>` : ''} <button class="btn sm light" onclick="refresh()">Try again</button></div>`;
+  return '';
+}
+function when(iso) { if (!iso) return 'earlier'; const d = new Date(iso); return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+function needData() { return !ST ? `<div class="card empty">${connected() ? 'Loading from the sheet…' : 'Connect the app to your sheet to see this.'}</div>` : ''; }
+
+function render() {
+  header();
+  const app = $('#app');
+  const top = banners();
+  if (view === 'quote') { app.innerHTML = top + quoteHTML(); bindQuote(); }
+  else if (view === 'buy') { app.innerHTML = top + (needData() || buyHTML()); bindBuy(); }
+  else if (view === 'stock') app.innerHTML = top + (needData() || stockHTML());
+  else if (view === 'sales') app.innerHTML = top + (needData() || salesHTML());
+  else if (view === 'dash') app.innerHTML = top + (needData() || dashHTML());
+}
+
+// Quote
+let qVal = '';
+function quoteHTML() {
+  const s = S();
+  return `<div class="two"><div class="card">
+    <h2>Buying quote</h2>
+    <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
+    <input id="qp" class="bigin" type="text" inputmode="decimal" autocomplete="off" placeholder="87.1" value="${esc(qVal)}">
+    <div id="qout"></div>
+    <button class="btn gold" id="qadd">＋ Add to batch quote</button>
+    <div class="kbd desk-only">Press Enter to add to the batch</div>
+  </div>
+  <div class="card" id="bqCard">${bqHTML()}</div></div>
+  ${s ? `<div class="muted" style="text-align:center">Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${(s.margin * 100).toLocaleString('en-GB')}%) · 1 g = ${s.bhyPerGram} BHY</div>` : ''}`;
+}
+function qOutHTML(v) {
+  const p = toPurity(v);
+  if (!S()) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price">₱—</div><div class="muted">Connect the app to load today's base price.</div></div>`;
+  if (p === null) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price">₱—</div><div class="muted">Type a purity above</div></div>`;
+  if (isNaN(p)) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price" style="font-size:22px">Enter a purity like 87.1 or 0.871</div></div>`;
+  const q = quoteFor(p);
+  return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
+    <div class="price" id="qPrice">${peso(q.perBhy)}</div>
+    <div class="subs"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div><div><small>Reference per BHY</small><b id="qRef">${peso(q.refBhy)}</b></div></div>
+    <span class="rule">${ruleTxt(q)}</span></div>`;
+}
+function bqHTML() {
+  if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
+  const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
+    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
+  return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}`;
+}
+function bindQuote() {
+  const el = $('#qp'); if (!el) return;
+  const upd = () => { qVal = el.value; $('#qout').innerHTML = qOutHTML(el.value); };
+  el.addEventListener('input', upd);
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); bqAdd(); } });
+  $('#qadd').onclick = bqAdd;
+  upd();
+}
+function bqAdd() {
+  const el = $('#qp'); const p = toPurity(el.value);
+  if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); return; }
+  BQ.push(p); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); el.select();
+}
+function bqDel(i) { BQ.splice(i, 1); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); }
+function bqClear() { if (!BQ.length || !confirm('Clear the batch quote list?')) return; BQ = []; save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); }
+
+// Buy
+let buyDraft = { date: '', weightBhy: '', purity: '', cost: '' };
+function buyHTML() {
+  const d = buyDraft;
+  return `<div class="two"><div class="card"><h2>New purchase <span class="muted">next #${esc(ST.nextNo)}</span></h2>
+    <div class="row2">
+      <div><label for="bw">Weight (BHY)</label><input id="bw" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.weightBhy)}" placeholder="0.00"></div>
+      <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.purity)}" placeholder="85.35"></div>
+    </div>
+    <div id="bhint"></div>
+    <label for="bc">Cost (₱)</label><input id="bc" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.cost)}" placeholder="0.00">
+    <label for="bd">Date</label><input id="bd" type="date" value="${esc(d.date || todayISO())}">
+    <button class="btn" id="bsave">Save purchase</button>
+    <div class="muted" style="margin-top:8px">Saved as In stock on the Purchases tab.</div></div>
+    <div class="card desk-only"><h2>Last added</h2>${lastAddedHTML()}</div></div>`;
+}
+function lastAddedHTML() {
+  const L = (ST.stock || []).slice().sort((a, b) => (b.no || 0) - (a.no || 0)).slice(0, 6);
+  return L.length ? L.map(itemRowHTML).join('') : '<div class="empty">No items in stock.</div>';
+}
+function buyHint() {
+  const el = $('#bhint'); if (!el) return;
+  const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p) : null;
+  if (!q) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="calc">Quote at ${pct(p)}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
+}
+function bindBuy() {
+  if (!$('#bsave')) return;
+  ['bw', 'bp', 'bc', 'bd'].forEach(id => $('#' + id).addEventListener('input', () => { buyDraft = { weightBhy: $('#bw').value, purity: $('#bp').value, cost: $('#bc').value, date: $('#bd').value }; buyHint(); }));
+  ['bw', 'bp', 'bc'].forEach(id => $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); savePurchase(); } }));
+  $('#bsave').onclick = savePurchase; buyHint();
+}
+async function savePurchase() {
+  const w = parseNum($('#bw').value), p = toPurity($('#bp').value), c = parseNum($('#bc').value), d = $('#bd').value || todayISO();
+  if (!(w > 0)) return toast('Enter the weight in BHY');
+  if (p === null || isNaN(p)) return toast('Enter a purity like 85.35 or 0.8535');
+  if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
+  const j = await write('addPurchase', { date: d, weightBhy: w, purity: p, cost: c }, $('#bsave'));
+  if (!j) return;
+  buyDraft = { date: d, weightBhy: '', purity: '', cost: '' };
+  render(); toast(j.message || 'Saved ✓'); const el = $('#bw'); if (el) el.focus();
+}
+
+// Stock
+function itemRowHTML(it) {
+  return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
+    <span class="muted">Cost ${peso(it.cost)} · Profit <b class="${sgn(it.projProfit)}">${peso(it.projProfit)}</b></span></div>
+    <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
+}
+function stockHTML() {
+  const L = (ST.stock || []).slice().sort((a, b) => (a.no || 0) - (b.no || 0));
+  if (!L.length) return `<div class="card empty">No items in stock.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
+  const tc = L.reduce((t, x) => t + (x.cost || 0), 0), tp = L.reduce((t, x) => t + (x.projProfit || 0), 0), tw = L.reduce((t, x) => t + (x.weightBhy || 0), 0);
+  const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
+    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td class="${sgn(it.projProfit)}"><b>${peso(it.projProfit)}</b></td>
+      <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}
+    <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td class="${sgn(tp)}">${peso(tp)}</td><td></td></tr></tbody></table>`;
+  return `<button class="btn gold" id="refineBtn" style="margin:0 0 12px" onclick="openRefine()">🔥 Batch refine all ${L.length} items</button>
+    <div class="card"><h2>In stock <span class="muted">${L.length} items</span></h2>
+    ${table}<div class="mobile-only">${L.map(itemRowHTML).join('')}</div></div>`;
+}
+function stockItem(no) { return (ST.stock || []).find(x => Number(x.no) === Number(no)); }
+function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="sheet" role="dialog">${html}</div>`; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) closeModal(); }); return m; }
+function closeModal() { const m = $('#modal'); if (m) m.remove(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+function editItem(no) {
+  const it = stockItem(no); if (!it) return;
+  modal(`<h2>Edit #${esc(no)}</h2>
+    <div class="row2"><div><label for="ew">Weight (BHY)</label><input id="ew" type="text" inputmode="decimal" value="${esc(it.weightBhy)}"></div>
+    <div><label for="ep">Purity %</label><input id="ep" type="text" inputmode="decimal" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
+    <label for="ec">Cost (₱)</label><input id="ec" type="text" inputmode="decimal" value="${esc(it.cost)}">
+    <label for="ed">Date</label><input id="ed" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : '')}">
+    <button class="btn" id="esave">Save changes</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  $('#esave').onclick = async () => {
+    const w = parseNum($('#ew').value), p = toPurity($('#ep').value), c = parseNum($('#ec').value);
+    if (!(w > 0)) return toast('Enter the weight in BHY'); if (p === null || isNaN(p)) return toast('Enter a valid purity'); if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
+    const j = await write('editPurchase', { no, weightBhy: w, purity: p, cost: c, date: $('#ed').value }, $('#esave'));
+    if (j) { closeModal(); render(); toast(j.message); }
+  };
+}
+async function delItem(no) {
+  const it = stockItem(no); if (!it) return;
+  if (!confirm(`Delete #${no}?\n${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)}\n\nThis removes the row from the Purchases tab.`)) return;
+  const j = await write('deletePurchase', { no }); if (j) { render(); toast(j.message); }
+}
+async function openRefine() {
+  const btn = $('#refineBtn'); if (btn) { btn.disabled = true; btn.textContent = 'Checking totals…'; }
+  let j; try { j = await api('batchPreview'); } catch (e) { alert(e.message); render(); return; }
+  render(); const p = j.preview;
+  if (!p.count) return toast('No items in stock');
+  modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${p.count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>
+    <div class="sumlist">
+      <div><span>Items</span><b>${p.count}</b></div>
+      <div><span>Raw grams</span><b>${g3(p.rawG)} g</b></div>
+      <div><span>Refined grams (est.)</span><b>${g3(p.refinedG)} g</b></div>
+      <div><span>Cost of items</span><b>${peso(p.cost)}</b></div>
+      <div><span>Refining fee</span><b>${peso(p.fee)}</b></div>
+      <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
+      <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
+      <div class="big"><span>Est. profit</span><b class="${sgn(p.estProfit)}">${peso(p.estProfit)}</b></div>
+      <div><span>Silver needed</span><b>${g3(p.silverG)} g</b></div>
+    </div>
+    <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
+    <button class="btn gold" id="rgo">Refine ${p.count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  $('#rgo').onclick = async () => {
+    const r = await write('batchRefine', { batchId: $('#rid').value.trim(), expectNos: p.nos }, $('#rgo'));
+    if (r) { closeModal(); go('sales'); toast(r.message, 4000); }
+  };
+}
+
+// Refining & sales
+function salesHTML() {
+  const B = ST.batches || [];
+  const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
+    <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
+    <div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div><div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
+    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b class="${sgn(b.estProfit)}">${peso(b.estProfit)}</b></div>`
+      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b class="${sgn(b.actualProfit)}">${peso(b.actualProfit)}</b></div>`}</div>
+    <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" onclick="openSale('${esc(b.id)}')">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
+    : '<div class="empty">No refining batches yet. Use Batch refine on the Stock screen.</div>';
+  const L = ST.sales || [];
+  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${peso(s.actual)}</span></div><b class="${sgn(s.profit)}">${peso(s.profit)}</b></div>`).join('')
+    : '<div class="empty">No sales recorded yet.</div>';
+  return `<div class="two"><div class="card"><h2>Refining batches</h2>${batches}</div>
+    <div class="card"><h2>Recent sales <span class="muted">profit</span></h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
+}
+function openSale(id) {
+  const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
+  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${g3(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}</div>
+    <label for="sd">Sell date</label><input id="sd" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(b.sellDate) ? b.sellDate : todayISO())}">
+    <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(b.sellBase ?? (ST.base || ''))}">
+    <label for="sa">Actual amount received (₱) <span class="hint">optional, overrides grams × base</span></label><input id="sa" type="text" inputmode="decimal" value="${esc(b.actualAmt ?? '')}">
+    <div id="scalc"></div>
+    <button class="btn green" id="sgo">${b.recorded ? 'Save correction' : 'Record sale'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const calc = () => { const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
+    const val = amt != null && !isNaN(amt) ? amt : (base > 0 ? b.refinedG * base : null);
+    $('#scalc').innerHTML = val != null ? `<div class="calc">Received ${peso(val)} · profit <b class="${sgn(val - b.costInclFee)}">${peso(val - b.costInclFee)}</b></div>` : ''; };
+  ['sb', 'sa'].forEach(k => $('#' + k).addEventListener('input', calc)); calc();
+  $('#sgo').onclick = async () => {
+    const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
+    if (!$('#sd').value) return toast('Pick the sell date');
+    if (!(base > 0) && !(amt >= 0 && amt !== null)) return toast('Enter the sell base or the amount received');
+    const j = await write('recordBatchSale', { batchId: id, sellDate: $('#sd').value, sellBase: base > 0 ? base : '', actualAmt: amt != null && !isNaN(amt) ? amt : '' }, $('#sgo'));
+    if (j) { closeModal(); render(); toast(j.message, 4000); }
+  };
+}
+function openOtherSale() {
+  modal(`<h2>Add other sale</h2><div class="muted">For sales that are not a refining batch.</div>
+    <label for="od">Date</label><input id="od" type="date" value="${todayISO()}">
+    <div class="row2"><div><label for="oc">Cost (₱)</label><input id="oc" type="text" inputmode="decimal"></div><div><label for="oa">Received (₱)</label><input id="oa" type="text" inputmode="decimal"></div></div>
+    <div class="row2"><div><label for="og">Grams <span class="hint">optional</span></label><input id="og" type="text" inputmode="decimal"></div><div><label for="ob">Base / g <span class="hint">optional</span></label><input id="ob" type="text" inputmode="decimal"></div></div>
+    <button class="btn green" id="ogo">Save sale</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  $('#ogo').onclick = async () => {
+    const c = parseNum($('#oc').value), a = parseNum($('#oa').value);
+    if (c === null || isNaN(c)) return toast('Enter the cost'); if (a === null || isNaN(a)) return toast('Enter the amount received');
+    const j = await write('addSale', { date: $('#od').value, cost: c, actual: a, grams: $('#og').value, base: $('#ob').value }, $('#ogo'));
+    if (j) { closeModal(); render(); toast(j.message, 4000); }
+  };
+}
+
+// Dashboard
+function dashHTML() {
+  const d = ST.dashboard || {};
+  return `<div class="tiles">
+    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val ${sgn(d.totalRealized)}" id="dReal">${peso(d.totalRealized)}</div></div>
+    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val ${sgn(d.estRefiningProfit)}" id="dRef">${peso(d.estRefiningProfit)}</div>
+      ${d.openBatches ? `<div class="muted">Unsold batches: ${peso(d.openBatchesEstProfit)} est.</div>` : ''}</div>
+    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${peso(ST.base)}</div><div class="muted">${esc(ST.source || '')}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
+    <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${peso(d.cashUsed)}</div></div>
+  </div><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(when(lastSync))}</div>`;
+}
+
+// Settings
+function openSettings() {
+  modal(`<h2>⚙️ Settings</h2><div class="muted">Connect to the Gold Tracker sheet's web app. The setup text from Apps Script looks like <b>URL|token</b>; you can paste it whole into the URL box.</div>
+    <label for="cu">Web app URL</label><input id="cu" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(CFG.url)}">
+    <label for="ct">Token</label><input id="ct" type="password" autocomplete="off" value="${esc(CFG.token)}">
+    <button class="btn gold" id="csave">Save &amp; test</button>
+    ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
+    <button class="btn light" onclick="closeModal()">Close</button>
+    <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(when(lastSync)) : ''}</div>`);
+  $('#csave').onclick = async () => {
+    let u = $('#cu').value.trim(), t = $('#ct').value.trim();
+    if (u.includes('|')) { const i = u.lastIndexOf('|'); t = u.slice(i + 1).trim(); u = u.slice(0, i).trim(); }
+    if (!validUrl(u)) return toast('That URL does not look right');
+    if (t.length < 16) return toast('Enter the token');
+    const old = CFG; CFG = { url: u, token: t };
+    try { await api('getState'); save(CFG_KEY, CFG); closeModal(); render(); toast('Connected ✓'); }
+    catch (e) { CFG = old; alert('Could not connect: ' + e.message); }
+  };
+  const cc = $('#cclear'); if (cc) cc.onclick = () => { if (!confirm('Disconnect this device? Your sheet is not changed.')) return; CFG = { url: '', token: '' }; ST = null; localStorage.removeItem(CFG_KEY); localStorage.removeItem(CACHE_KEY); closeModal(); render(); };
+}
+function validUrl(u) { try { const x = new URL(u); return x.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(x.hostname); } catch (e) { return false; } }
+$('#setBtn').onclick = openSettings;
+$('#refreshBtn').onclick = () => connected() ? refresh() : openSettings();
+
+// One-tap setup link: index.html#setup=<url>|<token>
+async function setupFromHash() {
+  const m = location.hash.match(/^#setup=(.+)$/); if (!m) return false;
+  history.replaceState(null, '', location.pathname + location.search);
+  let s; try { s = decodeURIComponent(m[1]); } catch (e) { return false; }
+  const i = s.lastIndexOf('|'); const u = s.slice(0, i).trim(), t = s.slice(i + 1).trim();
+  if (i < 0 || !validUrl(u) || t.length < 16) { alert('That setup link is not valid.'); return false; }
+  if (!confirm(`Connect this app to your Gold Tracker sheet?\n\n${new URL(u).host}`)) return false;
+  const old = CFG; CFG = { url: u, token: t };
+  try { await api('getState'); save(CFG_KEY, CFG); toast('Connected ✓'); }
+  catch (e) { CFG = old; alert('Could not connect: ' + e.message); }
+  render(); return true;
+}
+window.addEventListener('hashchange', () => { if (/^#setup=/.test(location.hash)) setupFromHash(); else { const v = (location.hash.match(/^#(quote|buy|stock|sales|dash)$/) || [])[1]; if (v) go(v); } });
+window.addEventListener('focus', () => { if (connected() && lastSync && Date.now() - new Date(lastSync).getTime() > 60000) refresh(true); });
+document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+render(); focusQuote();
+setupFromHash().then(done => { if (!done && connected()) refresh(true); });
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

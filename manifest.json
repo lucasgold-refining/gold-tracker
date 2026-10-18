@@ -1,0 +1,20 @@
+{
+  "name": "Lucas Gold Tracker",
+  "short_name": "Gold Tracker",
+  "description": "Quote, buy, stock, refining and sales for Lucas Jewelry Tools. Uses the Gold Tracker Google Sheet.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf7ef",
+  "theme_color": "#221c0e",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Quote", "url": "./index.html#quote", "icons": [{"src": "icons/icon-192.png", "sizes": "192x192"}]},
+    {"name": "Buy", "url": "./index.html#buy", "icons": [{"src": "icons/icon-192.png", "sizes": "192x192"}]}
+  ]
+}
