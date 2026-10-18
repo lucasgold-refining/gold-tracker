@@ -20,7 +20,9 @@ button,input,select{font-family:inherit}
 header{background:var(--ink);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:10px}
 header h1{margin:0;font-size:19px;font-weight:800;white-space:nowrap}
 header h1 span{color:var(--gold2)}
-.basepill{margin-left:auto;text-align:right;line-height:1.15;min-width:0}
+.basepill{margin-left:auto;text-align:right;line-height:1.15;min-width:0;border:0;background:#2e2615;color:#fff;border-radius:12px;padding:6px 10px;min-height:46px;cursor:pointer;font:inherit}
+.basepill:hover{background:#3a3020}
+.basepill .pen{font-size:12px;margin-left:4px;opacity:.85}
 .basepill b{display:block;color:var(--gold2);font-size:17px;white-space:nowrap}
 .basepill small{color:#d8d1bd;font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
 .hbtn{border:0;background:#3a3020;color:#fff;border-radius:12px;min-width:46px;min-height:46px;font-size:20px;cursor:pointer}
@@ -105,6 +107,23 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 .sumlist div b{white-space:nowrap}
 .sumlist div.big b{font-size:20px}
 .hidden{display:none!important}
+.eye{border:0;background:#efe9da;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 10px;flex:none;vertical-align:middle}
+.eye svg{width:24px;height:24px}
+.eye[aria-pressed=true]{background:var(--ink);color:var(--gold2)}
+.pv.masked{letter-spacing:1px;color:var(--muted)!important}
+.month{background:var(--goldbg);border:2px solid var(--goldline);border-radius:16px;padding:18px 16px;margin-bottom:12px;text-align:center}
+.month .lbl{font-size:18px;font-weight:800;color:var(--brown)}
+.month .big{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0 6px}
+.month .val{font-size:44px;font-weight:900;line-height:1.1;word-break:break-all;color:#3d2c00}
+.month .sec{font-size:15px;color:var(--muted)}
+details.all{background:var(--card);border:1px solid #efe9da;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:12px}
+details.all>summary{list-style:none;cursor:pointer;min-height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:18px;font-weight:800}
+details.all>summary::-webkit-details-marker{display:none}
+details.all>summary::after{content:"▾";font-size:20px;color:var(--brown);transition:transform .15s}
+details.all[open]>summary::after{transform:rotate(180deg)}
+details.all .inner{padding:0 16px 16px}
+.eyerow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 .kbd{font-size:12px;color:var(--muted);margin-top:6px;text-align:center}
 .calc{margin-top:8px;background:var(--goldbg);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;font-size:16px}
 .calc b{font-size:18px}
@@ -115,7 +134,7 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
   header h1{display:none}
   .basepill{margin-left:0;text-align:left;display:flex;gap:14px;align-items:baseline}
   .basepill small{max-width:none}
-  .hbtn:first-of-type{margin-left:auto}
+  #refreshBtn{margin-left:auto}
   nav{top:0;bottom:0;right:auto;width:230px;flex-direction:column;border-top:0;border-right:1px solid #3a3020;background:var(--ink);padding:0 12px 12px;gap:4px;z-index:7}
   .side-brand{display:block;color:#fff;font-weight:900;font-size:20px;padding:18px 8px 16px;border-bottom:1px solid #3a3020;margin-bottom:10px}
   .side-brand span{color:var(--gold2)}
@@ -128,6 +147,8 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
   .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   .tiles{grid-template-columns:1fr 1fr}
   .quote .price{font-size:56px}
+  .month .val{font-size:60px}
+  .basepill{padding:6px 14px}
   .toast{bottom:28px}
   .modal{align-items:center}
   .modal .sheet{border-radius:18px;max-height:88vh}
@@ -139,7 +160,7 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 <body>
 <header>
   <h1>Lucas <span>Gold</span></h1>
-  <div class="basepill" id="basePill"><b>₱—</b><small>Not connected</small></div>
+  <button type="button" class="basepill" id="basePill" aria-label="Set base price" title="Set base price"><b>₱—</b><small>Not connected</small></button>
   <button class="hbtn" id="refreshBtn" title="Refresh from the sheet" aria-label="Refresh">⟳</button>
   <button class="hbtn" id="setBtn" title="Settings" aria-label="Settings">⚙️</button>
 </header>
@@ -155,13 +176,28 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = n => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const peso = n => (n == null || isNaN(n)) ? '–' : (Number(n) < 0 ? '−₱' : '₱') + num(Math.abs(Number(n)));
 const sgn = n => n == null ? '' : (Number(n) < 0 ? 'neg' : 'pos');
+// ---------- profit privacy (hidden on every open; never saved) ----------
+let SHOW = false;
+const MASK = '₱ ••••••';
+const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+// A profit amount: masked unless SHOW. data-v keeps the number so the eye can flip it in place.
+const prof = (n, extra) => { const has = n != null && !isNaN(n);
+  return `<span class="pv${SHOW || !has ? ' ' + sgn(has ? n : null) : ' masked'}${extra ? ' ' + extra : ''}" data-v="${has ? Number(n) : ''}">${SHOW || !has ? peso(n) : MASK}</span>`; };
+const eyeBtn = () => `<button type="button" class="eye" aria-pressed="${SHOW}" aria-label="${SHOW ? 'Hide profit' : 'Show profit'}" title="${SHOW ? 'Hide profit' : 'Show profit'}" onclick="toggleEye(event)">${SHOW ? EYE_OFF : EYE_OPEN}</button>`;
+function toggleEye(e) { if (e) { e.preventDefault(); e.stopPropagation(); } SHOW = !SHOW; applyEye(); }
+function applyEye() {
+  document.querySelectorAll('.pv').forEach(el => { const v = el.dataset.v; if (v === '') return; const n = Number(v);
+    el.textContent = SHOW ? peso(n) : MASK; el.classList.toggle('masked', !SHOW); el.classList.toggle('pos', SHOW && n >= 0); el.classList.toggle('neg', SHOW && n < 0); });
+  document.querySelectorAll('.eye').forEach(b => { b.setAttribute('aria-pressed', String(SHOW)); const l = SHOW ? 'Hide profit' : 'Show profit'; b.setAttribute('aria-label', l); b.title = l; b.innerHTML = SHOW ? EYE_OFF : EYE_OPEN; });
+}
 const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
 const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 const g3 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -239,9 +275,11 @@ function focusQuote() { const el = $('#qp'); if (el && matchMedia('(min-width:90
 
 function header() {
   const s = S();
-  $('#basePill').innerHTML = s && s.base ? `<b>${peso(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span></b><small>${esc(ST.source || '')}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
+  $('#basePill').innerHTML = s && s.base ? `<b>${peso(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span><span class="pen" aria-hidden="true">✏️</span></b><small>${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
     : `<b>₱—</b><small>${connected() ? 'Loading…' : 'Not connected'}</small>`;
 }
+const isManual = () => !!(ST && /^manual/i.test(String(ST.source || '')));
+const srcTxt = () => isManual() ? 'Manual' : String((ST && ST.source) || '');
 function banners() {
   if (!connected()) return `<div class="banner">This app is not connected to your Gold Tracker sheet yet. <button class="btn sm gold" onclick="openSettings()">Set up</button></div>`;
   if (netErr) return `<div class="banner err">${esc(netErr)}${ST ? `<br><small>Showing what was saved ${esc(when(lastSync))}. Quotes still work.</small>` : ''} <button class="btn sm light" onclick="refresh()">Try again</button></div>`;
@@ -355,7 +393,7 @@ async function savePurchase() {
 // Stock
 function itemRowHTML(it) {
   return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
-    <span class="muted">Cost ${peso(it.cost)} · Profit <b class="${sgn(it.projProfit)}">${peso(it.projProfit)}</b></span></div>
+    <span class="muted">Cost ${peso(it.cost)} · Profit <b>${prof(it.projProfit)}</b></span></div>
     <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
 }
 function stockHTML() {
@@ -363,11 +401,11 @@ function stockHTML() {
   if (!L.length) return `<div class="card empty">No items in stock.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
   const tc = L.reduce((t, x) => t + (x.cost || 0), 0), tp = L.reduce((t, x) => t + (x.projProfit || 0), 0), tw = L.reduce((t, x) => t + (x.weightBhy || 0), 0);
   const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
-    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td class="${sgn(it.projProfit)}"><b>${peso(it.projProfit)}</b></td>
+    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit)}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}
-    <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td class="${sgn(tp)}">${peso(tp)}</td><td></td></tr></tbody></table>`;
+    <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td><b>${prof(tp)}</b></td><td></td></tr></tbody></table>`;
   return `<button class="btn gold" id="refineBtn" style="margin:0 0 12px" onclick="openRefine()">🔥 Batch refine all ${L.length} items</button>
-    <div class="card"><h2>In stock <span class="muted">${L.length} items</span></h2>
+    <div class="card"><h2><span>In stock <span class="muted">${L.length} items</span></span>${eyeBtn()}</h2>
     ${table}<div class="mobile-only">${L.map(itemRowHTML).join('')}</div></div>`;
 }
 function stockItem(no) { return (ST.stock || []).find(x => Number(x.no) === Number(no)); }
@@ -408,7 +446,7 @@ async function openRefine() {
       <div><span>Refining fee</span><b>${peso(p.fee)}</b></div>
       <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
       <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
-      <div class="big"><span>Est. profit</span><b class="${sgn(p.estProfit)}">${peso(p.estProfit)}</b></div>
+      <div class="big"><span>Est. profit ${eyeBtn()}</span><b>${prof(p.estProfit)}</b></div>
       <div><span>Silver needed</span><b>${g3(p.silverG)} g</b></div>
     </div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
@@ -425,15 +463,15 @@ function salesHTML() {
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
     <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
     <div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div><div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
-    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b class="${sgn(b.estProfit)}">${peso(b.estProfit)}</b></div>`
-      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b class="${sgn(b.actualProfit)}">${peso(b.actualProfit)}</b></div>`}</div>
+    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit)}</b></div>`
+      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit)}</b></div>`}</div>
     <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" onclick="openSale('${esc(b.id)}')">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
     : '<div class="empty">No refining batches yet. Use Batch refine on the Stock screen.</div>';
   const L = ST.sales || [];
-  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${peso(s.actual)}</span></div><b class="${sgn(s.profit)}">${peso(s.profit)}</b></div>`).join('')
+  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${peso(s.actual)}</span></div><b>${prof(s.profit)}</b></div>`).join('')
     : '<div class="empty">No sales recorded yet.</div>';
-  return `<div class="two"><div class="card"><h2>Refining batches</h2>${batches}</div>
-    <div class="card"><h2>Recent sales <span class="muted">profit</span></h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
+  return `<div class="two"><div class="card"><h2>Refining batches ${eyeBtn()}</h2>${batches}</div>
+    <div class="card"><h2><span>Recent sales <span class="muted">profit</span></span>${eyeBtn()}</h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
 }
 function openSale(id) {
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
@@ -445,7 +483,7 @@ function openSale(id) {
     <button class="btn green" id="sgo">${b.recorded ? 'Save correction' : 'Record sale'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const calc = () => { const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
     const val = amt != null && !isNaN(amt) ? amt : (base > 0 ? b.refinedG * base : null);
-    $('#scalc').innerHTML = val != null ? `<div class="calc">Received ${peso(val)} · profit <b class="${sgn(val - b.costInclFee)}">${peso(val - b.costInclFee)}</b></div>` : ''; };
+    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${peso(val)} · profit <b>${prof(val - b.costInclFee)}</b></span>${eyeBtn()}</div>` : ''; };
   ['sb', 'sa'].forEach(k => $('#' + k).addEventListener('input', calc)); calc();
   $('#sgo').onclick = async () => {
     const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
@@ -469,17 +507,47 @@ function openOtherSale() {
   };
 }
 
-// Dashboard
+// Dashboard: this month's profit first; all-time totals folded away.
+let dashOpen = false;
 function dashHTML() {
-  const d = ST.dashboard || {};
-  return `<div class="tiles">
-    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val ${sgn(d.totalRealized)}" id="dReal">${peso(d.totalRealized)}</div></div>
-    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val ${sgn(d.estRefiningProfit)}" id="dRef">${peso(d.estRefiningProfit)}</div>
-      ${d.openBatches ? `<div class="muted">Unsold batches: ${peso(d.openBatchesEstProfit)} est.</div>` : ''}</div>
-    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${peso(ST.base)}</div><div class="muted">${esc(ST.source || '')}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
+  const d = ST.dashboard || {}, m = ST.month;
+  const month = m ? `<div class="month" id="monthCard"><div class="lbl" id="mName">${esc(m.name)} profit</div>
+      <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit)}</span>${eyeBtn()}</div>
+      <div class="sec">Purchases this month <b id="mCost">${peso(m.purchasesCost)}</b></div></div>`
+    : `<div class="month"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
+  return month + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>All-time totals</summary><div class="inner">
+    <div class="eyerow"><span class="muted">Profit figures</span>${eyeBtn()}</div>
+    <div class="tiles">
+    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized)}</div></div>
+    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit)}</div>
+      ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit)} est.</div>` : ''}</div>
+    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${peso(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
     <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${peso(d.cashUsed)}</div></div>
-  </div><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(when(lastSync))}</div>`;
+  </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(when(lastSync))}</div>`;
 }
+
+// Manual base price
+function openBase() {
+  if (!connected()) return openSettings();
+  if (!ST || !ST.base) return toast('Loading from the sheet…');
+  modal(`<h2>Set base price</h2><div class="muted">Today's buying base per gram, after the ₱200 adjustment. It replaces the sheet's base until the next automatic update.</div>
+    <label for="bb">Base price (₱ / g)</label><input id="bb" class="basein" type="text" inputmode="decimal" autocomplete="off" value="${esc(Number(ST.base).toFixed(2))}">
+    <div class="muted" style="margin-top:6px">Now ${peso(ST.base)} / g · ${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div>
+    <button class="btn gold" id="bbsave">Save</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const el = $('#bb'); el.focus(); el.select();
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveBase(); } });
+  $('#bbsave').onclick = saveBase;
+}
+async function saveBase() {
+  const v = parseNum($('#bb').value);
+  if (v === null || isNaN(v)) return toast('Enter the base price, e.g. 8250');
+  if (v < 1000 || v > 50000) return toast('Base must be between ₱1,000 and ₱50,000 / g');
+  const base = Math.round(v * 100) / 100;
+  if (!confirm(`Set base to ${peso(base)} / g?`)) return;
+  const j = await write('setBase', { base }, $('#bbsave'));
+  if (j) { closeModal(); render(); toast(j.message || 'Base updated ✓'); }
+}
+$('#basePill').onclick = openBase;
 
 // Settings
 function openSettings() {
@@ -487,6 +555,7 @@ function openSettings() {
     <label for="cu">Web app URL</label><input id="cu" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(CFG.url)}">
     <label for="ct">Token</label><input id="ct" type="password" autocomplete="off" value="${esc(CFG.token)}">
     <button class="btn gold" id="csave">Save &amp; test</button>
+    ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${peso(ST.base)} / g)</span></button>` : ''}
     ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
     <button class="btn light" onclick="closeModal()">Close</button>
     <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(when(lastSync)) : ''}</div>`);
@@ -499,6 +568,7 @@ function openSettings() {
     try { await api('getState'); save(CFG_KEY, CFG); closeModal(); render(); toast('Connected ✓'); }
     catch (e) { CFG = old; alert('Could not connect: ' + e.message); }
   };
+  const cb = $('#cbase'); if (cb) cb.onclick = openBase;
   const cc = $('#cclear'); if (cc) cc.onclick = () => { if (!confirm('Disconnect this device? Your sheet is not changed.')) return; CFG = { url: '', token: '' }; ST = null; localStorage.removeItem(CFG_KEY); localStorage.removeItem(CACHE_KEY); closeModal(); render(); };
 }
 function validUrl(u) { try { const x = new URL(u); return x.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(x.hostname); } catch (e) { return false; } }
