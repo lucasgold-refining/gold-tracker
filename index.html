@@ -88,6 +88,13 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .seglbl{font-size:13px;font-weight:700;color:var(--muted);margin:12px 0 5px}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:#efe9da;border-radius:12px;padding:4px}
 .seg button{border:0;border-radius:9px;min-height:48px;font:inherit;font-size:17px;font-weight:700;background:transparent;color:var(--muted);cursor:pointer}
+.seg.two2{grid-template-columns:1fr 1fr}
+#modeSeg{margin:0 0 14px}
+#modeSeg button{min-height:52px;font-size:18px}
+.qmini{margin-top:12px;text-align:center;font-size:16px;color:var(--brown)}
+.qmini b{font-size:22px;color:#3d2c00}
+.bqmain{border:2px solid var(--goldline)}
+.bqmain h2{font-size:20px}
 .seg button[aria-pressed=true]{background:var(--ink);color:var(--gold2);font-weight:900;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .stk{background:#fff;border-radius:14px;padding:14px 16px;border:1px solid #efe9da;border-left:6px solid var(--gold);box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .stk.ink{border-left-color:var(--ink)}
@@ -237,8 +244,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 12;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote';
+const APP_VERSION = 13;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -493,6 +500,15 @@ const ruleTxt = q => { const s = S(); return q.full ? `Full base (${pct(s.fullMi
 const dedToggleHTML = () => `<div class="seg" role="group" aria-label="Purity deduction" id="dedSeg">${DED_OPTS.map(v =>
   `<button type="button" data-ded="${v}" aria-pressed="${Math.abs(v - DED) < 1e-9}" onclick="setDed(${v})">${dedTxt(v)}</button>`).join('')}</div>`;
 const baseLineHTML = () => { const s = S(); return s ? `Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${dedTxt(DED)}) · 1 g = ${s.bhyPerGram} BHY` : ''; };
+// Quote mode: 'single' (Enter = buy) or 'batch' (Enter = add to batch list). Remembered on this device.
+let QMODE = load(QM_KEY) === 'batch' ? 'batch' : 'single';
+const modeToggleHTML = () => `<div class="seg two2" role="group" aria-label="Quote mode" id="modeSeg">${[['single', 'Single'], ['batch', 'Batch']].map(([m, t]) =>
+  `<button type="button" data-mode="${m}" aria-pressed="${QMODE === m}" onclick="setMode('${m}')">${t}</button>`).join('')}</div>`;
+function setMode(m) {
+  if (m !== 'single' && m !== 'batch' || m === QMODE) return;
+  QMODE = m; save(QM_KEY, m);
+  if (view === 'quote') { const y = window.scrollY; render(); window.scrollTo(0, y); focusQuote(); }
+}
 function setDed(v) {
   if (!DED_OPTS.some(x => Math.abs(x - v) < 1e-9)) return;
   DED = v; save(DED_KEY, v);
@@ -538,16 +554,18 @@ function render() {
 let qVal = '';
 function quoteHTML() {
   const s = S();
+  const B = QMODE === 'batch';
   return `<div class="two"><div class="card">
+    ${modeToggleHTML()}
     <h2>Buying quote</h2>
     <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
-    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="go" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="87.1" value="${esc(qVal)}"></div>
-    <div class="cellhint" id="qHint">Type purity, press Enter to buy</div>
+    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="${B ? 'enter' : 'go'}" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="87.1" value="${esc(qVal)}"></div>
+    <div class="cellhint" id="qHint">${B ? 'Type purity, press Enter to add to batch' : 'Type purity, press Enter to buy'}</div>
     <div class="seglbl">Deduction below ${s ? pct(s.fullMin) : '99.8%'}</div>${dedToggleHTML()}
     <div id="qout"></div>
-    <button class="btn sec" id="qadd">＋ Add to batch quote</button>
+    <button class="btn ${B ? 'gold' : 'sec'}" id="qadd">＋ Add to batch quote</button>
   </div>
-  <div class="card bqsec" id="bqCard">${bqHTML()}</div></div>
+  <div class="card ${B ? 'bqmain' : 'bqsec'}" id="bqCard">${bqHTML()}</div></div>
   ${s ? `<div class="fine" id="qBaseLine">${esc(baseLineHTML())}</div>` : ''}`;
 }
 function qOutHTML(v) {
@@ -556,6 +574,8 @@ function qOutHTML(v) {
   if (p === null) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price">₱—</div><div class="muted">Type a purity above</div>${offTxt()}</div>`;
   if (isNaN(p)) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price" style="font-size:22px">Enter a purity like 87.1 or 0.871</div></div>`;
   const q = quoteFor(p);
+  // Batch mode: one compact live line, so the batch list stays the main thing on screen.
+  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${pct(p)} → <b id="qPrice">${peso(q.perBhy)}</b> / BHY${offTxt()}</div>`;
   return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
     <div class="price" id="qPrice">${peso(q.perBhy)}</div>
     <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
@@ -593,10 +613,12 @@ function bindQuote() {
   // Typing a purity counts as quoting (re-showing the tab does not restart the 30-minute window).
   el.addEventListener('input', () => { upd(); const p = toPurity(el.value); if (p !== null && !isNaN(p)) rememberQuote(p); });
   cellInput(el, { escape: true, box: $('#qCell') });
-  // Enter / Go = "🛒 Buy this": Buy tab with the purity filled, focus on Weight. Invalid: stay here.
-  // The batch quote is added only with its button.
+  // Single: Enter / Go = "🛒 Buy this" (Buy tab, purity filled, focus on Weight).
+  // Batch: Enter adds to the batch list and keeps the box focused + selected for the next purity.
+  // Invalid purity: stay here either way.
   el.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault(); if (e.repeat) return;
+    if (QMODE === 'batch') { bqAdd(); return; }
     const p = toPurity(el.value);
     if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); selectAll(el); return; }
     qVal = el.value; buyFrom(p);
