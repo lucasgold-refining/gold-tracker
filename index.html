@@ -76,6 +76,17 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 /* Fine print for Iyam only: small, light grey (about 2.4:1 on the quote and page backgrounds), hard to read from across the counter. */
 .fine{font-size:11px;line-height:1.35;font-weight:400;color:#a8a294;text-align:center;margin-top:2px}
 .fine b{font-weight:400}
+.seglbl{font-size:13px;font-weight:700;color:var(--muted);margin:12px 0 5px}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:#efe9da;border-radius:12px;padding:4px}
+.seg button{border:0;border-radius:9px;min-height:48px;font:inherit;font-size:17px;font-weight:700;background:transparent;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--gold2);font-weight:900;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.stk{background:#fff;border-radius:14px;padding:14px 16px;border:1px solid #efe9da;border-left:6px solid var(--gold);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.stk.ink{border-left-color:var(--ink)}
+.stk h3{margin:0 0 6px;font-size:16px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.stk .sumlist{margin-top:0}
+.stk .sumlist div:last-child{border-bottom:0}
+.stkwrap{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+@media (min-width:900px){.stkwrap{grid-template-columns:1fr 1fr;align-items:start}}
 .rule{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:#fff;color:var(--brown);border:1px solid var(--goldline)}
 .bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
 .bq:last-child{border-bottom:0}
@@ -197,8 +208,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 7;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue';
+const APP_VERSION = 8;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -437,13 +448,30 @@ function renderNet() {
 }
 
 // ---------- quote (same rules as the sheet) ----------
-function quoteFor(p) {
+// Quote-tab deduction (purity points), chosen on this device: 0.5%, 1% (default, today's rule) or 1.5%.
+const DED_OPTS = [0.005, 0.01, 0.015];
+let DED = (() => { const v = Number(load(DED_KEY)); return DED_OPTS.some(x => Math.abs(x - v) < 1e-9) ? v : 0.01; })();
+const dedTxt = m => (m * 100).toLocaleString('en-GB') + '%';
+// m = deduction to use (Quote tab: DED; Buy screen hint: the sheet's QuoteMargin, unchanged).
+function quoteFor(p, m) {
   const s = S(); if (!s || !s.base || p == null || isNaN(p)) return null;
+  if (m == null) m = DED;
   const bhy = s.bhyPerGram || 2, full = p + 1e-9 >= s.fullMin;
-  const perGram = full ? s.base : Math.max(0, s.base * (p - s.margin));
-  return { perGram, perBhy: perGram / bhy, refBhy: s.base * p / bhy, full };
+  const perGram = full ? s.base : Math.max(0, s.base * (p - m));
+  return { perGram, perBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
 }
-const ruleTxt = q => { const s = S(); return q.full ? `Full base (${pct(s.fullMin).replace(/0+%$/, '%').replace(/\.%$/, '%')} and up)` : `Base × (purity − ${(s.margin * 100).toLocaleString('en-GB')}%)`; };
+const ruleTxt = q => { const s = S(); return q.full ? `Full base (${pct(s.fullMin).replace(/0+%$/, '%').replace(/\.%$/, '%')} and up)` : `Base × (purity − ${dedTxt(q.m != null ? q.m : DED)})`; };
+const dedToggleHTML = () => `<div class="seg" role="group" aria-label="Purity deduction" id="dedSeg">${DED_OPTS.map(v =>
+  `<button type="button" data-ded="${v}" aria-pressed="${Math.abs(v - DED) < 1e-9}" onclick="setDed(${v})">${dedTxt(v)}</button>`).join('')}</div>`;
+const baseLineHTML = () => { const s = S(); return s ? `Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${dedTxt(DED)}) · 1 g = ${s.bhyPerGram} BHY` : ''; };
+function setDed(v) {
+  if (!DED_OPTS.some(x => Math.abs(x - v) < 1e-9)) return;
+  DED = v; save(DED_KEY, v);
+  document.querySelectorAll('#dedSeg button').forEach(b => b.setAttribute('aria-pressed', String(Math.abs(Number(b.dataset.ded) - v) < 1e-9)));
+  const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value);
+  const bc = $('#bqCard'); if (bc) bc.innerHTML = bqHTML();
+  const bl = $('#qBaseLine'); if (bl) bl.textContent = baseLineHTML();
+}
 
 // ---------- views ----------
 let view = (location.hash.match(/^#(quote|buy|stock|sales|dash)$/) || [])[1] || 'quote';
@@ -485,12 +513,13 @@ function quoteHTML() {
     <h2>Buying quote</h2>
     <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
     <input id="qp" class="bigin" type="text" inputmode="decimal" autocomplete="off" placeholder="87.1" value="${esc(qVal)}">
+    <div class="seglbl">Deduction below ${s ? pct(s.fullMin) : '99.8%'}</div>${dedToggleHTML()}
     <div id="qout"></div>
     <button class="btn gold" id="qadd">＋ Add to batch quote</button>
     <div class="kbd desk-only">Press Enter to add to the batch</div>
   </div>
   <div class="card" id="bqCard">${bqHTML()}</div></div>
-  ${s ? `<div class="fine" id="qBaseLine">Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${(s.margin * 100).toLocaleString('en-GB')}%) · 1 g = ${s.bhyPerGram} BHY</div>` : ''}`;
+  ${s ? `<div class="fine" id="qBaseLine">${esc(baseLineHTML())}</div>` : ''}`;
 }
 function qOutHTML(v) {
   const p = toPurity(v);
@@ -549,7 +578,7 @@ function lastAddedHTML() {
 }
 function buyHint() {
   const el = $('#bhint'); if (!el) return;
-  const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p) : null;
+  const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p, (S() || {}).margin) : null;   // Buy hint: the sheet's rule (1%), not the Quote toggle
   if (!q) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="calc">Quote at ${pct(p)}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
 }
@@ -729,6 +758,33 @@ function openOtherSale() {
   };
 }
 
+// In-stock boxes, from the stock the app already has (getState) plus purchases still on this device.
+const manilaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+function stockRows() {
+  const s = S() || {}, bhy = s.bhyPerGram || 2;
+  const sheet = (ST.stock || []).map(x => ({ date: String(x.date || ''), grams: x.grams != null ? Number(x.grams) : Number(x.weightBhy) / bhy, purity: Number(x.purity) || 0, cost: Number(x.cost) || 0, local: false }));
+  const local = pendingQ().map(x => ({ date: String(x.date || ''), grams: Number(x.weightBhy) / bhy, purity: Number(x.purity) || 0, cost: Number(x.cost) || 0, local: true }));
+  return sheet.concat(local);
+}
+function stockSum(L) {
+  const base = Number(ST.base) || 0;
+  const t = L.reduce((a, x) => { a.n++; a.g += x.grams; a.c += x.cost; a.v += base * x.purity * x.grams; a.l += x.local ? 1 : 0; return a; }, { n: 0, g: 0, c: 0, v: 0, l: 0 });
+  t.p = t.v - t.c; return t;
+}
+function stockBoxesHTML() {
+  const all = stockRows(), today = manilaToday();
+  const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), A = stockSum(all);
+  const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
+  return `<div class="stkwrap">
+    <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
+      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${g3(T.g)} g</b></div>
+      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div>
+    <div class="stk ink" id="dStock"><h3><span>Total in stock</span>${eyeBtn()}</h3><div class="sumlist">
+      <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${g3(A.g)} g</b></div>
+      <div><span>Cost</span><b id="sCost">${peso(A.c)}</b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue">${peso(A.v)}</b></div>
+      <div><span>Est. profit</span><b id="sProfit">${prof(A.p)}</b></div></div>${loc(A)}</div></div>`;
+}
+
 // Dashboard: this month's profit first; all-time totals folded away.
 let dashOpen = false;
 function dashHTML() {
@@ -737,7 +793,7 @@ function dashHTML() {
       <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit)}</span>${eyeBtn()}</div>
       <div class="sec">Purchases this month <b id="mCost">${peso(m.purchasesCost)}</b></div></div>`
     : `<div class="month"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
-  return month + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>All-time totals</summary><div class="inner">
+  return month + stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>All-time totals</summary><div class="inner">
     <div class="eyerow"><span class="muted">Profit figures</span>${eyeBtn()}</div>
     <div class="tiles">
     <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized)}</div></div>
