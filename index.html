@@ -93,7 +93,19 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .stk .sumlist{margin-top:0}
 .stk .sumlist div:last-child{border-bottom:0}
 .stkwrap{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
-@media (min-width:900px){.stkwrap{grid-template-columns:1fr 1fr;align-items:start}}
+@media (min-width:900px){.stkwrap{grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:start}}
+/* v10: Total in stock is the main Dashboard card */
+.stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
+.stk.main h3{font-size:20px;color:var(--brown)}
+.stk .figs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 10px}
+.stk .figs div{background:#fff;border-radius:10px;padding:8px 10px;min-width:0}
+.stk .figs span{display:block;font-size:13px;color:var(--muted);font-weight:700}
+.stk .figs b{display:block;font-size:22px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stk .profrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border-radius:10px;padding:8px 10px}
+.stk .profrow span{font-size:14px;color:var(--muted);font-weight:700}
+.stk .profrow b{font-size:26px;font-weight:900;white-space:nowrap}
+.all .month{margin:0 0 14px}
+.all .month .val{font-size:38px}
 .rule{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:#fff;color:var(--brown);border:1px solid var(--goldline)}
 .bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
 .bq:last-child{border-bottom:0}
@@ -215,7 +227,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -816,26 +828,29 @@ function stockBoxesHTML() {
   const all = stockRows(), today = manilaToday();
   const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), A = stockSum(all);
   const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
-  return `<div class="stkwrap">
+  return `<div class="stkwrap" id="stockMain">
+    <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn()}</h3>
+      <div class="figs">
+        <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${g3(A.g)} g</b></div>
+        <div><span>Cost</span><b id="sCost">${peso(A.c)}</b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue">${peso(A.v)}</b></div>
+      </div>
+      <div class="profrow"><span>Est. profit</span><b id="sProfit">${prof(A.p)}</b></div>${loc(A)}</div>
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
       <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${g3(T.g)} g</b></div>
-      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div>
-    <div class="stk ink" id="dStock"><h3><span>Total in stock</span>${eyeBtn()}</h3><div class="sumlist">
-      <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${g3(A.g)} g</b></div>
-      <div><span>Cost</span><b id="sCost">${peso(A.c)}</b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue">${peso(A.v)}</b></div>
-      <div><span>Est. profit</span><b id="sProfit">${prof(A.p)}</b></div></div>${loc(A)}</div></div>`;
+      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div></div>`;
 }
 
-// Dashboard: this month's profit first; all-time totals folded away.
+// Dashboard (v10): stock first; this month's profit and the all-time totals folded into one dropdown.
 let dashOpen = false;
 function dashHTML() {
   const d = ST.dashboard || {}, m = ST.month;
   const month = m ? `<div class="month" id="monthCard"><div class="lbl" id="mName">${esc(m.name)} profit</div>
       <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit)}</span>${eyeBtn()}</div>
       <div class="sec">Purchases this month <b id="mCost">${peso(m.purchasesCost)}</b></div></div>`
-    : `<div class="month"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
-  return month + stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>All-time totals</summary><div class="inner">
-    <div class="eyerow"><span class="muted">Profit figures</span>${eyeBtn()}</div>
+    : `<div class="month" id="monthCard"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
+  return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>Profit &amp; totals</summary><div class="inner">
+    ${month}
+    <div class="eyerow"><span class="muted">All-time totals</span>${eyeBtn()}</div>
     <div class="tiles">
     <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized)}</div></div>
     <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit)}</div>
