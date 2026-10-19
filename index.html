@@ -113,6 +113,14 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .bq .p{flex:1}
 .bq .v{font-weight:900;font-size:19px;text-align:right}
 .bq .v small{display:block;font-weight:500;font-size:12px}
+.bqbuy{border:0;background:var(--ink);color:var(--gold2);border-radius:10px;min-width:44px;min-height:44px;font-size:17px;cursor:pointer;flex:none}
+.bq .p{min-width:0}
+.btn.buythis{background:var(--green);color:#fff;margin-top:12px}
+.pnote{text-align:left;margin:6px 0 0;font-size:12px;color:#8f8771}
+.linkbtn{border:0;background:none;padding:6px 4px;font:inherit;font-size:12px;color:#6b4f0e;text-decoration:underline;cursor:pointer}
+.chint{display:inline-block;border:0;background:none;padding:8px 2px;margin-top:2px;font:inherit;font-size:14px;color:#8f8771;cursor:pointer;text-align:left}
+.chint b{font-weight:600}
+.chint:hover{color:var(--brown)}
 .x{border:0;background:var(--redbg);color:var(--red);border-radius:10px;min-width:44px;min-height:44px;font-size:17px;cursor:pointer}
 .ed{border:0;background:#efe9da;border-radius:10px;min-width:46px;min-height:44px;font-size:18px;cursor:pointer}
 .item{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
@@ -227,8 +235,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 10;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction';
+const APP_VERSION = 11;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -494,7 +502,7 @@ function setDed(v) {
 
 // ---------- views ----------
 let view = (location.hash.match(/^#(quote|buy|stock|sales|dash)$/) || [])[1] || 'quote';
-function go(v) { view = v; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); window.scrollTo(0, 0); if (v === 'quote') focusQuote(); }
+function go(v) { if (v === 'buy' && view !== 'buy') prefillBuy(); view = v; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); window.scrollTo(0, 0); if (v === 'quote') focusQuote(); }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => go(b.dataset.v));
 function focusQuote() { const el = $('#qp'); if (el && matchMedia('(min-width:900px)').matches) el.focus(); }
 
@@ -550,13 +558,14 @@ function qOutHTML(v) {
   return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
     <div class="price" id="qPrice">${peso(q.perBhy)}</div>
     <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
-    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}</div>`;
+    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}
+    <button type="button" class="btn buythis" id="qbuy" onclick="buyFrom(${p})">🛒 Buy this</button></div>`;
 }
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(when(lastSync))}</div>` : '';
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
   const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
-    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
+    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
   return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}`;
 }
 // Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
@@ -580,7 +589,8 @@ function cellInput(el, opt) {
 function bindQuote() {
   const el = $('#qp'); if (!el) return;
   const upd = () => { qVal = el.value; $('#qout').innerHTML = qOutHTML(el.value); };
-  el.addEventListener('input', upd);
+  // Typing a purity counts as quoting (re-showing the tab does not restart the 30-minute window).
+  el.addEventListener('input', () => { upd(); const p = toPurity(el.value); if (p !== null && !isNaN(p)) rememberQuote(p); });
   cellInput(el, { escape: true, box: $('#qCell') });
   // Enter / Done confirms: adds to the batch quote (as before) and keeps the result on screen.
   // Desktop keeps the cell selected for the next purity; phones close the keypad.
@@ -605,8 +615,10 @@ function buyHTML() {
       <div><label for="bw">Weight (BHY)</label><input id="bw" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.weightBhy)}" placeholder="0.00"></div>
       <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.purity)}" placeholder="85.35"></div>
     </div>
+    <div class="pnote${qPre && d.purity === qPre ? '' : ' hidden'}" id="pnote">From quote ${esc(qPre)}% · <button type="button" class="linkbtn" id="pclear">clear</button></div>
     <div id="bhint"></div>
     <label for="bc">Cost (₱)</label><input id="bc" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="${esc(d.cost)}" placeholder="0.00">
+    <button type="button" class="chint hidden" id="chint" title="Tap to use this as the cost"></button>
     <label for="bd">Date</label><input id="bd" type="date" value="${esc(d.date || todayISO())}">
     <button class="btn" id="bsave">Save purchase</button>
     <div class="muted" style="margin-top:8px">${isOffline() ? 'Offline: saved on this device and sent to the sheet when the internet is back.' : 'Saved as In stock on the Purchases tab.'}</div></div>
@@ -617,11 +629,42 @@ function lastAddedHTML() {
   const L = (ST.stock || []).slice().sort((a, b) => (b.no || 0) - (a.no || 0)).slice(0, 6);
   loadQ(); return Q.length || L.length ? Q.slice().reverse().map(qRowHTML).join('') + L.map(itemRowHTML).join('') : '<div class="empty">No items in stock.</div>';
 }
+// ---------- Quote -> Buy hand-off (v11) ----------
+// The last quoted purity is remembered for 30 minutes; the Buy tab offers it when the form is empty.
+const LQ_MS = 30 * 60000;
+let qPre = '';   // purity text the Buy form was prefilled with (shows "From quote … · clear")
+const pTxt = p => String(+(Number(p) * 100).toFixed(4));
+function rememberQuote(p) { save(LQ_KEY, { p, at: Date.now() }); }
+function forgetQuote() { try { localStorage.removeItem(LQ_KEY); } catch (e) {} qPre = ''; }
+function freshQuote() { const q = load(LQ_KEY); return q && q.p > 0 && q.p <= 1 && Date.now() - Number(q.at) >= 0 && Date.now() - Number(q.at) < LQ_MS ? q : null; }
+function prefillBuy() {   // direct tab switch: only an empty form, never over what he typed
+  const d = buyDraft; if (d.weightBhy || d.purity || d.cost) return;
+  const q = freshQuote(); if (!q) return;
+  qPre = pTxt(q.p); buyDraft = Object.assign({}, d, { purity: qPre });
+}
+function buyFrom(p) {     // "🛒 Buy this": purity from the quote, focus on Weight
+  p = Number(p); if (!(p > 0 && p <= 1)) return;
+  rememberQuote(p); qPre = pTxt(p); buyDraft = Object.assign({}, buyDraft, { purity: qPre });
+  go('buy'); const el = $('#bw'); if (el) el.focus();
+}
+function clearPre() {
+  forgetQuote(); buyDraft = Object.assign({}, buyDraft, { purity: '' });
+  const bp = $('#bp'); if (bp) { bp.value = ''; bp.focus(); } buyHint();
+}
+// Amount the quote gives for this weight/purity, at the Quote tab's chosen deduction.
+function quoteAmount() {
+  const bp = $('#bp'), bw = $('#bw'); if (!bp || !bw) return null;
+  const p = toPurity(bp.value), w = parseNum(bw.value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;
+  return q && w > 0 ? Math.round(q.perBhy * w * 100) / 100 : null;
+}
 function buyHint() {
   const el = $('#bhint'); if (!el) return;
-  const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p, (S() || {}).margin) : null;   // Buy hint: the sheet's rule (1%), not the Quote toggle
+  const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;   // same deduction as the Quote tab
+  const n = $('#pnote'); if (n) n.classList.toggle('hidden', !(qPre && $('#bp').value === qPre));
+  const ch = $('#chint'), amt = quoteAmount();
+  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : amt.toFixed(2); }
   if (!q) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="calc">Quote at ${pct(p)}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
+  el.innerHTML = `<div class="calc">Quote at ${pct(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
 }
 function bindBuy() {
   if (!$('#bsave')) return;
@@ -633,7 +676,10 @@ function bindBuy() {
     e.preventDefault(); if (e.repeat || e.isComposing) return;
     if (next[id]) { const n = $('#' + next[id]); if (n) n.focus(); } else savePurchase();
   }); cellInput($('#' + id)); });
-  $('#bsave').onclick = savePurchase; buyHint();
+  $('#bsave').onclick = savePurchase;
+  const pc = $('#pclear'); if (pc) pc.onclick = clearPre;
+  const ch = $('#chint'); if (ch) ch.onclick = () => { const v = ch.dataset.amt; if (!v) return; const bc = $('#bc'); bc.value = v; bc.dispatchEvent(new Event('input')); bc.focus(); };
+  buyHint();
 }
 // Optimistic: the purchase goes into the local queue at once, the form clears for the next item,
 // and the queue sends it to the sheet in the background (same rid on every retry, so never twice).
@@ -651,6 +697,7 @@ function savePurchase() {
   if (!connected()) return openSettings();
   // The date is fixed now (entry time), so a purchase synced later keeps the day it was bought.
   enqueue({ rid: rid(), date: d, weightBhy: w, purity: p, cost: c, createdAt: new Date().toISOString(), tries: 0 });
+  forgetQuote();   // next customer starts fresh
   buyDraft = { date: d, weightBhy: '', purity: '', cost: '' }; render();
   const el = $('#bw'); if (el) el.focus();
   if (!navigator.onLine) return toast('Saved offline. Will sync when back online', 3500);
