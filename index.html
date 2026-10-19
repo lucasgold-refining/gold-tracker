@@ -57,6 +57,13 @@ label .hint{font-weight:500;color:var(--muted);font-size:13px}
 input,select{width:100%;font-size:19px;padding:12px;border:2px solid #d6cfbd;border-radius:12px;background:#fff;min-height:54px;color:var(--text)}
 input:focus,select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,160,23,.25)}
 input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
+/* Quote purity box: a spreadsheet-style cell. The whole box is the tap target; focus = Excel-like green selection. */
+.cell{display:block;cursor:text;background:#fff;border:2px solid #8f8771;border-radius:12px;padding:6px;transition:border-color .1s,box-shadow .1s}
+.cell input.bigin{border:0;box-shadow:none;min-height:84px;font-size:38px;border-radius:8px;background:transparent;caret-color:#217346}
+.cell input.bigin:focus{border:0;box-shadow:none}
+.cell:focus-within{border-color:#217346;box-shadow:0 0 0 3px rgba(33,115,70,.35)}
+.cell input::selection{background:#c6e5d2;color:var(--text)}
+.cellhint{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font-size:18px;font-weight:800;min-height:56px;margin-top:14px;background:var(--ink);color:#fff;cursor:pointer}
 .btn.gold{background:var(--gold);color:var(--ink)}
@@ -208,7 +215,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -512,7 +519,8 @@ function quoteHTML() {
   return `<div class="two"><div class="card">
     <h2>Buying quote</h2>
     <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
-    <input id="qp" class="bigin" type="text" inputmode="decimal" autocomplete="off" placeholder="87.1" value="${esc(qVal)}">
+    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="87.1" value="${esc(qVal)}"></div>
+    <div class="cellhint">Tap the box and type: it replaces the old purity</div>
     <div class="seglbl">Deduction below ${s ? pct(s.fullMin) : '99.8%'}</div>${dedToggleHTML()}
     <div id="qout"></div>
     <button class="btn gold" id="qadd">＋ Add to batch quote</button>
@@ -539,18 +547,39 @@ function bqHTML() {
     <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
   return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}`;
 }
+// Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
+// iOS Safari / Android Chrome move the caret on mouseup/touchend after focus, so re-select then too.
+const touchUI = () => matchMedia('(pointer:coarse)').matches;
+function selectAll(el) { try { el.setSelectionRange(0, el.value.length); } catch (e) { el.select(); } }
+function cellInput(el, opt) {
+  opt = opt || {};
+  let fresh = 0, prev = el.value;
+  el.addEventListener('focus', () => { prev = el.value; fresh = Date.now(); selectAll(el); setTimeout(() => { if (document.activeElement === el) selectAll(el); }, 0); });
+  const fix = e => {   // the click that focused the box would otherwise drop the selection
+    if (!fresh || Date.now() - fresh > 600 || document.activeElement !== el) return;
+    if (e.type === 'mouseup') e.preventDefault();
+    fresh = 0; selectAll(el); setTimeout(() => { if (document.activeElement === el) selectAll(el); }, 30);
+  };
+  el.addEventListener('mouseup', fix); el.addEventListener('touchend', fix);
+  if (opt.escape) el.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); el.value = prev; el.dispatchEvent(new Event('input')); selectAll(el); } });
+  if (opt.box) opt.box.addEventListener('mousedown', e => { if (e.target !== el) { e.preventDefault(); el.focus(); } });
+  if (opt.box) opt.box.addEventListener('click', e => { if (e.target !== el && document.activeElement !== el) el.focus(); });
+}
 function bindQuote() {
   const el = $('#qp'); if (!el) return;
   const upd = () => { qVal = el.value; $('#qout').innerHTML = qOutHTML(el.value); };
   el.addEventListener('input', upd);
-  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); bqAdd(); } });
+  cellInput(el, { escape: true, box: $('#qCell') });
+  // Enter / Done confirms: adds to the batch quote (as before) and keeps the result on screen.
+  // Desktop keeps the cell selected for the next purity; phones close the keypad.
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (bqAdd() && touchUI()) el.blur(); } });
   $('#qadd').onclick = bqAdd;
   upd();
 }
 function bqAdd() {
   const el = $('#qp'); const p = toPurity(el.value);
-  if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); return; }
-  BQ.push(p); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); el.select();
+  if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); return false; }
+  BQ.push(p); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); selectAll(el); return true;
 }
 function bqDel(i) { BQ.splice(i, 1); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); }
 function bqClear() { if (!BQ.length || !confirm('Clear the batch quote list?')) return; BQ = []; save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); }
@@ -561,11 +590,11 @@ function buyHTML() {
   const d = buyDraft;
   return `<div class="two"><div class="card"><h2>New purchase <span class="muted" id="nextNo">${esc(nextNoTxt())}</span></h2>
     <div class="row2">
-      <div><label for="bw">Weight (BHY)</label><input id="bw" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.weightBhy)}" placeholder="0.00"></div>
-      <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.purity)}" placeholder="85.35"></div>
+      <div><label for="bw">Weight (BHY)</label><input id="bw" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.weightBhy)}" placeholder="0.00"></div>
+      <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.purity)}" placeholder="85.35"></div>
     </div>
     <div id="bhint"></div>
-    <label for="bc">Cost (₱)</label><input id="bc" type="text" inputmode="decimal" autocomplete="off" value="${esc(d.cost)}" placeholder="0.00">
+    <label for="bc">Cost (₱)</label><input id="bc" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="${esc(d.cost)}" placeholder="0.00">
     <label for="bd">Date</label><input id="bd" type="date" value="${esc(d.date || todayISO())}">
     <button class="btn" id="bsave">Save purchase</button>
     <div class="muted" style="margin-top:8px">${isOffline() ? 'Offline: saved on this device and sent to the sheet when the internet is back.' : 'Saved as In stock on the Purchases tab.'}</div></div>
@@ -585,16 +614,28 @@ function buyHint() {
 function bindBuy() {
   if (!$('#bsave')) return;
   ['bw', 'bp', 'bc', 'bd'].forEach(id => $('#' + id).addEventListener('input', () => { buyDraft = { weightBhy: $('#bw').value, purity: $('#bp').value, cost: $('#bc').value, date: $('#bd').value }; buyHint(); }));
-  ['bw', 'bp', 'bc'].forEach(id => $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); savePurchase(); } }));
+  // Enter chain: Weight -> Purity -> Cost -> save (same as tapping Save). Held Enter (auto-repeat) never saves.
+  const next = { bw: 'bp', bp: 'bc' };
+  ['bw', 'bp', 'bc'].forEach(id => { $('#' + id).addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); if (e.repeat || e.isComposing) return;
+    if (next[id]) { const n = $('#' + next[id]); if (n) n.focus(); } else savePurchase();
+  }); cellInput($('#' + id)); });
   $('#bsave').onclick = savePurchase; buyHint();
 }
 // Optimistic: the purchase goes into the local queue at once, the form clears for the next item,
 // and the queue sends it to the sheet in the background (same rid on every retry, so never twice).
+let lastSave = { key: '', at: 0 };
 function savePurchase() {
   const w = parseNum($('#bw').value), p = toPurity($('#bp').value), c = parseNum($('#bc').value), d = $('#bd').value || todayISO();
-  if (!(w > 0)) return toast('Enter the weight in BHY');
-  if (p === null || isNaN(p)) return toast('Enter a purity like 85.35 or 0.8535');
-  if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
+  const bad = (id, msg) => { toast(msg); const el = $('#' + id); if (el) el.focus(); };
+  if (!(w > 0)) return bad('bw', 'Enter the weight in BHY');
+  if (p === null || isNaN(p)) return bad('bp', 'Enter a purity like 85.35 or 0.8535');
+  if (c === null || isNaN(c) || c < 0) return bad('bc', 'Enter the cost');
+  // Same purchase saved again within 1.5 s = a double tap / double Enter: ignore it.
+  const key = [w, p, c, d].join('|'), now = Date.now();
+  if (key === lastSave.key && now - lastSave.at < 1500) return;
+  lastSave = { key, at: now };
   if (!connected()) return openSettings();
   // The date is fixed now (entry time), so a purchase synced later keeps the day it was bought.
   enqueue({ rid: rid(), date: d, weightBhy: w, purity: p, cost: c, createdAt: new Date().toISOString(), tries: 0 });
