@@ -67,6 +67,8 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font-size:18px;font-weight:800;min-height:56px;margin-top:14px;background:var(--ink);color:#fff;cursor:pointer}
 .btn.gold{background:var(--gold);color:var(--ink)}
+.btn.sec{background:transparent;color:var(--muted);border:1.5px solid var(--line);font-size:15px;font-weight:700;min-height:44px;padding:10px}
+.bqsec h2{font-size:15px;color:var(--muted)}
 .btn.light{background:#efe9da;color:var(--ink)}
 .btn.green{background:var(--green);color:#fff}
 .btn.danger{background:var(--redbg);color:var(--red)}
@@ -235,7 +237,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -539,14 +541,13 @@ function quoteHTML() {
   return `<div class="two"><div class="card">
     <h2>Buying quote</h2>
     <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
-    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="87.1" value="${esc(qVal)}"></div>
-    <div class="cellhint">Tap the box and type: it replaces the old purity</div>
+    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="go" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="87.1" value="${esc(qVal)}"></div>
+    <div class="cellhint" id="qHint">Type purity, press Enter to buy</div>
     <div class="seglbl">Deduction below ${s ? pct(s.fullMin) : '99.8%'}</div>${dedToggleHTML()}
     <div id="qout"></div>
-    <button class="btn gold" id="qadd">＋ Add to batch quote</button>
-    <div class="kbd desk-only">Press Enter to add to the batch</div>
+    <button class="btn sec" id="qadd">＋ Add to batch quote</button>
   </div>
-  <div class="card" id="bqCard">${bqHTML()}</div></div>
+  <div class="card bqsec" id="bqCard">${bqHTML()}</div></div>
   ${s ? `<div class="fine" id="qBaseLine">${esc(baseLineHTML())}</div>` : ''}`;
 }
 function qOutHTML(v) {
@@ -592,9 +593,14 @@ function bindQuote() {
   // Typing a purity counts as quoting (re-showing the tab does not restart the 30-minute window).
   el.addEventListener('input', () => { upd(); const p = toPurity(el.value); if (p !== null && !isNaN(p)) rememberQuote(p); });
   cellInput(el, { escape: true, box: $('#qCell') });
-  // Enter / Done confirms: adds to the batch quote (as before) and keeps the result on screen.
-  // Desktop keeps the cell selected for the next purity; phones close the keypad.
-  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (bqAdd() && touchUI()) el.blur(); } });
+  // Enter / Go = "🛒 Buy this": Buy tab with the purity filled, focus on Weight. Invalid: stay here.
+  // The batch quote is added only with its button.
+  el.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return; e.preventDefault(); if (e.repeat) return;
+    const p = toPurity(el.value);
+    if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); selectAll(el); return; }
+    qVal = el.value; buyFrom(p);
+  });
   $('#qadd').onclick = bqAdd;
   upd();
 }
