@@ -55,14 +55,18 @@ nav button.on::after{content:"";display:block;width:28px;height:3px;border-radiu
 label{display:block;font-size:15px;font-weight:700;margin:12px 0 5px;color:#2f2b22}
 label .hint{font-weight:500;color:var(--muted);font-size:13px}
 input,select{width:100%;font-size:19px;padding:12px;border:2px solid #d6cfbd;border-radius:12px;background:#fff;min-height:54px;color:var(--text)}
-input:focus,select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,160,23,.25)}
+/* v14: the box being edited is unmistakable: 3px dark-amber edge + bright amber ring + glow + tinted fill, and its label lights up. */
+input:focus,select:focus,input:focus-visible,select:focus-visible{outline:none;border:3px solid #b45309;padding:11px;background:#fff4cc;box-shadow:0 0 0 3px #fbbf24,0 0 18px 4px rgba(245,158,11,.55)}
+input[type=date]:focus{background:#fff4cc}
+label.flbl{width:fit-content;max-width:calc(100% + 16px);background:#ffd95a;color:#221c0e;font-weight:900;border-radius:7px;padding:0 8px;margin-left:-8px;margin-right:-8px;box-shadow:0 0 0 1px #b45309}
+label.flbl .hint{color:#3d2c00;font-weight:500}
 input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 /* Quote purity box: a spreadsheet-style cell. The whole box is the tap target; focus = Excel-like green selection. */
 .cell{display:block;cursor:text;background:#fff;border:2px solid #8f8771;border-radius:12px;padding:6px;transition:border-color .1s,box-shadow .1s}
-.cell input.bigin{border:0;box-shadow:none;min-height:84px;font-size:38px;border-radius:8px;background:transparent;caret-color:#217346}
-.cell input.bigin:focus{border:0;box-shadow:none}
-.cell:focus-within{border-color:#217346;box-shadow:0 0 0 3px rgba(33,115,70,.35)}
-.cell input::selection{background:#c6e5d2;color:var(--text)}
+.cell input.bigin{border:0;box-shadow:none;min-height:84px;font-size:38px;border-radius:8px;background:transparent;caret-color:#b45309}
+.cell input.bigin:focus{border:0;box-shadow:none;padding:12px;background:transparent}
+.cell:focus-within{border:3px solid #b45309;padding:5px;background:#fff4cc;box-shadow:0 0 0 3px #fbbf24,0 0 18px 4px rgba(245,158,11,.55)}
+.cell input::selection{background:#ffd95a;color:var(--text)}
 .cellhint{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font-size:18px;font-weight:800;min-height:56px;margin-top:14px;background:var(--ink);color:#fff;cursor:pointer}
@@ -117,7 +121,7 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .all .month .val{font-size:38px}
 .rule{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:#fff;color:var(--brown);border:1px solid var(--goldline)}
 .bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
-.bq:last-child{border-bottom:0}
+.bq:last-of-type{border-bottom:0}
 .bq .n{min-width:34px;height:34px;border-radius:10px;background:var(--ink);color:var(--gold2);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:15px}
 .bq .p{flex:1}
 .bq .v{font-weight:900;font-size:19px;text-align:right}
@@ -195,6 +199,20 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 .calc{margin-top:8px;background:var(--goldbg);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;font-size:16px}
 .calc b{font-size:18px}
 .side-brand{display:none}
+/* v14: batch purchase screen */
+.bball{background:var(--green);color:#fff;margin-top:12px}
+.bbrow{border:2px solid var(--line);border-left:6px solid var(--line);border-radius:12px;padding:8px 10px 10px;margin-top:10px;background:#fff;transition:background .1s,border-color .1s;scroll-margin:120px 0 110px}
+.bbrow.active{background:#fff8dc;border-color:#b45309;border-left-color:#b45309;box-shadow:0 0 0 2px #fbbf24}
+.bbrow.bad{border-color:var(--red);border-left-color:var(--red);background:var(--redbg)}
+.bbrow .bbtop{display:flex;align-items:center;gap:10px}
+.bbrow .n{min-width:34px;height:34px;border-radius:10px;background:var(--ink);color:var(--gold2);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:15px}
+.bbrow.active .n{background:#b45309;color:#fff}
+.bbrow .bbq{flex:1;font-size:13px;color:var(--muted)}
+.bbrow label{margin:6px 0 4px;font-size:14px}
+.bbrow .bberr{color:var(--red);font-weight:800;font-size:14px;margin-top:4px}
+.bbtot{position:sticky;bottom:calc(68px + env(safe-area-inset-bottom));z-index:3;background:var(--ink);color:#fff;border-radius:12px;padding:10px 12px;margin-top:12px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:15px}
+.bbtot b{color:var(--gold2);font-size:17px;white-space:nowrap}
+@media (min-width:900px){.bbtot{bottom:12px}.bbrow .row3{display:grid;grid-template-columns:2fr 1fr;gap:10px;align-items:start}}
 @media (min-width:900px){
   body{padding-left:230px}
   header{padding:12px 24px}
@@ -244,8 +262,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 13;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode';
+const APP_VERSION = 14;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -361,7 +379,8 @@ function softRender() {
     return render();
   }
   header(); renderNet();
-  if (view === 'buy') { const n = $('#nextNo'); if (n) n.textContent = nextNoTxt(); const l = $('#lastAdded'); if (l) l.innerHTML = lastAddedHTML(); buyHint(); }
+  if (view === 'buy' && BB.on) { bbTotals(); }
+  else if (view === 'buy') { const n = $('#nextNo'); if (n) n.textContent = nextNoTxt(); const l = $('#lastAdded'); if (l) l.innerHTML = lastAddedHTML(); buyHint(); }
   else { const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value); const b = $('#bqCard'); if (b) b.innerHTML = bqHTML(); }
   applyEye();
 }
@@ -544,7 +563,7 @@ function render() {
   const app = $('#app');
   const top = banners(); lastTop = top;
   if (view === 'quote') { app.innerHTML = top + quoteHTML(); bindQuote(); }
-  else if (view === 'buy') { app.innerHTML = top + (needData() || buyHTML()); bindBuy(); }
+  else if (view === 'buy') { app.innerHTML = top + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
   else if (view === 'stock') app.innerHTML = top + (needData() || stockHTML());
   else if (view === 'sales') app.innerHTML = top + (needData() || salesHTML());
   else if (view === 'dash') app.innerHTML = top + (needData() || dashHTML());
@@ -587,7 +606,7 @@ function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
   const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
     <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
-  return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}`;
+  return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}${QMODE === 'batch' ? `<button type="button" class="btn bball" id="bqBuyAll" onclick="buyAll()">🛒 Buy all ${BQ.length} item${BQ.length === 1 ? '' : 's'}</button>` : ''}`;
 }
 // Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
 // iOS Safari / Android Chrome move the caret on mouseup/touchend after focus, so re-select then too.
@@ -649,6 +668,7 @@ function buyHTML() {
     <button type="button" class="chint hidden" id="chint" title="Tap to use this as the cost"></button>
     <label for="bd">Date</label><input id="bd" type="date" value="${esc(d.date || todayISO())}">
     <button class="btn" id="bsave">Save purchase</button>
+    <button type="button" class="btn sec" id="bbOpen" onclick="bbStart()">📋 Batch add (several purchases)</button>
     <div class="muted" style="margin-top:8px">${isOffline() ? 'Offline: saved on this device and sent to the sheet when the internet is back.' : 'Saved as In stock on the Purchases tab.'}</div></div>
     <div class="card desk-only"><h2>Last added</h2><div id="lastAdded">${lastAddedHTML()}</div></div></div>`;
 }
@@ -673,6 +693,7 @@ function prefillBuy() {   // direct tab switch: only an empty form, never over w
 function buyFrom(p) {     // "🛒 Buy this": purity from the quote, focus on Weight
   p = Number(p); if (!(p > 0 && p <= 1)) return;
   rememberQuote(p); qPre = pTxt(p); buyDraft = Object.assign({}, buyDraft, { purity: qPre });
+  if (BB.on) { BB.on = false; bbSave(); }   // one item: the single form (a batch in progress is kept)
   go('buy'); const el = $('#bw'); if (el) el.focus();
 }
 function clearPre() {
@@ -732,6 +753,168 @@ function savePurchase() {
   toast(netDown ? 'Saved on this device. Will sync when the sheet answers' : 'Saved ✓, syncing…', 2600);
   setTimeout(() => syncQueue(), 0);   // after this paint
 }
+
+// ---------- Batch purchases (v14) ----------
+// One draft on this device: { on, fromQ, date, rows: [{ k, weightBhy, purity, cost }] }. Survives tab switches and reloads.
+// Save all puts every complete row into the same offline queue as a single purchase (own rid each), so sync,
+// retries and the sheet's request-ID check work exactly the same.
+let BB = (() => { const b = load(BB_KEY); return b && Array.isArray(b.rows) ? b : { on: false, fromQ: false, date: '', rows: [] }; })();
+const bbSave = () => save(BB_KEY, BB);
+const bbRow = p => ({ k: rid(), weightBhy: '', purity: p == null ? '' : pTxt(p), cost: '' });
+const bbBlank = r => !String(r.weightBhy).trim() && !String(r.cost).trim();   // purity alone (prefilled from the quote) = nothing typed
+const bbHasData = () => BB.rows.some(r => !bbBlank(r));
+function buyAll() {   // Quote tab (Batch): every quoted purity becomes a row, in the same order / numbers
+  if (!BQ.length) return toast('Add purities to the batch quote first');
+  if (BB.on && bbHasData() && !confirm('Replace the batch purchase you already started?')) return;
+  BB = { on: true, fromQ: true, date: todayISO(), rows: BQ.map(p => bbRow(p)) }; bbSave();
+  go('buy'); bbFocus(0, 'w');
+}
+function bbStart() {  // Buy tab: start a batch without a quote (keeps a batch already in progress)
+  if (!BB.rows.length) BB = { on: true, fromQ: false, date: $('#bd') ? $('#bd').value || todayISO() : todayISO(), rows: [bbRow(), bbRow(), bbRow()] };
+  BB.on = true; bbSave(); render(); window.scrollTo(0, 0); bbFocus(0, 'w');
+}
+function bbExit() {
+  if (bbHasData() && !confirm('Leave batch add? What you typed stays here for later.')) return;
+  BB.on = false; bbSave(); render(); window.scrollTo(0, 0);
+}
+function bbDiscard() {
+  if (bbHasData() && !confirm('Discard this whole batch? Nothing has been saved yet.')) return;
+  BB = { on: false, fromQ: false, date: '', rows: [] }; bbSave(); render(); window.scrollTo(0, 0);
+}
+const bbAmt = r => { const p = toPurity(r.purity), w = parseNum(r.weightBhy), q = p && !isNaN(p) ? quoteFor(p, DED) : null; return q && w > 0 ? Math.round(q.perBhy * w * 100) / 100 : null; };
+function bbRowHTML(r, i) {
+  const amt = bbAmt(r);
+  return `<div class="bbrow${r.err ? ' bad' : ''}" data-i="${i}" data-k="${esc(r.k)}"><div class="bbtop"><span class="n">${i + 1}</span>
+      <span class="bbq"></span>
+      <button type="button" class="x" aria-label="Remove row ${i + 1}" title="Remove row" onclick="bbDel(${i})">✕</button></div>
+    <div class="row3"><div class="row2">
+      <div><label for="bbw${i}">Weight (BHY)</label><input id="bbw${i}" data-f="w" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.weightBhy)}" placeholder="0.00"></div>
+      <div><label for="bbp${i}">Purity %</label><input id="bbp${i}" data-f="p" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.purity)}" placeholder="85.35"></div></div>
+      <div><label for="bbc${i}">Cost (₱)</label><input id="bbc${i}" data-f="c" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.cost)}" placeholder="0.00">
+      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : amt.toFixed(2)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
+    ${r.err ? `<div class="bberr">${esc(r.err)}</div>` : ''}</div>`;
+}
+function bbHTML() {
+  return `<div class="card" id="bbCard"><h2><span>Batch purchase <span class="muted" id="bbCount"></span></span><button type="button" class="btn sm light" onclick="bbExit()">Single</button></h2>
+    <div class="muted">${BB.fromQ ? 'From your batch quote, same numbers. ' : ''}Enter moves Weight → Purity → Cost → next row. Leave a row's weight and cost empty to skip it.</div>
+    <div id="bbRows">${BB.rows.map(bbRowHTML).join('')}</div>
+    <button type="button" class="btn light" id="bbAdd" onclick="bbAddRow()">＋ Add row</button>
+    <label for="bbd">Date <span class="hint">for every row</span></label><input id="bbd" type="date" value="${esc(BB.date || todayISO())}">
+    <div class="bbtot" id="bbTot"></div>
+    <button class="btn" id="bbSaveAll">Save all</button>
+    <button type="button" class="btn sec" onclick="bbDiscard()">Discard batch</button>
+    <div class="muted" style="margin-top:8px">${isOffline() ? 'Offline: saved on this device and sent to the sheet when the internet is back.' : 'Each row is saved as its own In stock purchase.'}</div></div>`;
+}
+function bbTotals() {
+  const el = $('#bbTot'); if (!el) return;
+  const bhy = (S() || {}).bhyPerGram || 2; let n = 0, w = 0, c = 0, miss = 0;
+  BB.rows.forEach(r => { if (bbBlank(r)) return; n++; const x = parseNum(r.weightBhy), y = parseNum(r.cost); if (x > 0) w += x; if (y >= 0 && y !== null) c += y; else miss++; });
+  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${g3(w / bhy)} g</b> <small style="color:#d8d1bd">(${wt(w)} BHY)</small></span><span>Cost <b id="bbC">${peso(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
+  const sb = $('#bbSaveAll'); if (sb) sb.textContent = n ? `Save all ${n} purchase${n === 1 ? '' : 's'}` : 'Save all';
+  const ct = $('#bbCount'); if (ct) ct.textContent = BB.rows.length + ' row' + (BB.rows.length === 1 ? '' : 's');
+}
+function bbRowUpdate(i) {   // hint + totals only: never re-draws the box being typed in
+  const r = BB.rows[i], row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!r || !row) return;
+  const ch = row.querySelector('.chint'), amt = bbAmt(r);
+  ch.classList.toggle('hidden', amt == null); ch.dataset.amt = amt == null ? '' : amt.toFixed(2);
+  ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
+  bbTotals();
+}
+function bbUseHint(i) { const row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!row) return; const v = row.querySelector('.chint').dataset.amt; if (!v) return;
+  const el = $('#bbc' + i); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.focus(); }
+// Keeps the box being edited clear of the sticky header, the totals bar and the bottom nav (phone).
+function ensureVisible(el) {
+  if (!el || !el.getBoundingClientRect) return;
+  const r = el.getBoundingClientRect(), hd = document.querySelector('header'), nv = document.querySelector('nav'), tot = $('#bbTot');
+  const topSafe = (hd && getComputedStyle(hd).position === 'sticky' ? hd.getBoundingClientRect().bottom : 0) + 34;   // + label
+  let botSafe = window.innerHeight - 10;
+  if (nv && nv.getBoundingClientRect().top > window.innerHeight / 2) botSafe = Math.min(botSafe, nv.getBoundingClientRect().top - 10);
+  if (tot) { const t = tot.getBoundingClientRect(); if (t.top > window.innerHeight / 2 && t.top < botSafe) botSafe = t.top - 10; }
+  if (r.top < topSafe) window.scrollBy(0, r.top - topSafe);
+  else if (r.bottom + 44 > botSafe) window.scrollBy(0, r.bottom + 44 - botSafe);   // + the cost hint under it
+}
+function bbFocus(i, f) {
+  const el = $(({ w: '#bbw', p: '#bbp', c: '#bbc' })[f] + i); if (!el) return false;
+  el.focus({ preventScroll: true }); ensureVisible(el); return true;
+}
+function bbAddRow() {
+  BB.rows.push(bbRow()); bbSave(); const y = window.scrollY; render(); window.scrollTo(0, y); bbFocus(BB.rows.length - 1, 'w');
+}
+function bbDel(i) {
+  const r = BB.rows[i]; if (!r) return;
+  if (!bbBlank(r) && !confirm(`Remove row ${i + 1}?`)) return;
+  BB.rows.splice(i, 1); if (!BB.rows.length) BB.rows.push(bbRow()); bbSave();
+  const y = window.scrollY; render(); window.scrollTo(0, y);
+}
+function bindBB() {
+  const box = $('#bbRows'); if (!box) return;
+  box.querySelectorAll('input').forEach(el => cellInput(el));
+  box.addEventListener('input', e => {
+    const el = e.target, row = el.closest('.bbrow'); if (!row) return; const i = Number(row.dataset.i), r = BB.rows[i]; if (!r) return;
+    r[{ w: 'weightBhy', p: 'purity', c: 'cost' }[el.dataset.f]] = el.value;
+    if (r.err) { r.err = ''; row.classList.remove('bad'); const m = row.querySelector('.bberr'); if (m) m.remove(); }
+    bbSave(); bbRowUpdate(i);
+  });
+  // Enter chain: Weight -> Purity -> Cost -> next row's Weight; Cost on the row that is last right now -> Save all.
+  box.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return; const el = e.target, row = el.closest('.bbrow'); if (!row || !el.dataset.f) return;
+    e.preventDefault(); if (e.repeat || e.isComposing) return;
+    const i = Number(row.dataset.i), f = el.dataset.f;
+    if (f === 'w') return bbFocus(i, 'p');
+    if (f === 'p') return bbFocus(i, 'c');
+    if (i < BB.rows.length - 1) return bbFocus(i + 1, 'w');
+    saveAll();
+  });
+  $('#bbd').addEventListener('input', () => { BB.date = $('#bbd').value; bbSave(); });
+  $('#bbSaveAll').onclick = saveAll;
+  bbTotals();
+}
+let lastBB = 0;
+function saveAll() {
+  const d = ($('#bbd') && $('#bbd').value) || BB.date || todayISO(), out = []; let firstBad = null;
+  BB.rows.forEach((r, i) => {
+    r.err = '';
+    if (bbBlank(r)) return;
+    const w = parseNum(r.weightBhy), p = toPurity(r.purity), c = parseNum(r.cost); let f = null;
+    if (!(w > 0)) { r.err = 'Enter the weight in BHY'; f = 'w'; }
+    else if (p === null || isNaN(p)) { r.err = 'Enter a purity like 85.35 or 0.8535'; f = 'p'; }
+    else if (c === null || isNaN(c) || c < 0) { r.err = 'Enter the cost' + (bbAmt(r) != null ? ' (or tap the quote under it)' : ''); f = 'c'; }
+    if (f) { if (!firstBad) firstBad = { i, f }; } else out.push({ w, p, c });
+  });
+  if (firstBad) {
+    const bad = BB.rows.filter(r => r.err).length; bbSave(); const y = window.scrollY; render(); window.scrollTo(0, y);
+    bbFocus(firstBad.i, firstBad.f); return toast(`${bad} row${bad === 1 ? '' : 's'} incomplete (row ${BB.rows.map((r, i) => r.err ? i + 1 : 0).filter(Boolean).join(', ')}). Nothing saved yet.`, 3500);
+  }
+  if (!out.length) { if (Date.now() - lastBB < 1500) return;   // double tap / double Enter right after a save: the batch is already gone, nothing can save twice
+    bbFocus(0, 'w'); return toast('Nothing to save. Type a weight and cost first.'); }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('Pick the date');
+  if (!connected()) return openSettings();
+  lastBB = Date.now();
+  const at = new Date().toISOString();
+  out.forEach(x => enqueue({ rid: rid(), date: d, weightBhy: x.w, purity: x.p, cost: x.c, createdAt: at, tries: 0 }));
+  if (BB.fromQ) { BQ = []; save(BQ_KEY, BQ); }
+  forgetQuote();
+  BB = { on: false, fromQ: false, date: '', rows: [] }; bbSave();
+  buyDraft = { date: d, weightBhy: '', purity: '', cost: '' }; render(); window.scrollTo(0, 0);
+  const n = out.length, what = `${n} purchase${n === 1 ? '' : 's'}`;
+  if (!navigator.onLine) return toast(`Saved ${what} offline. Will sync when back online`, 3500);
+  toast(netDown ? `Saved ${what} on this device. Will sync when the sheet answers` : `Saved ${what} ✓, syncing…`, 3000);
+  setTimeout(() => syncQueue(), 0);
+}
+// v14: the label of the box being edited lights up, and so does its whole batch row.
+document.addEventListener('focusin', e => {
+  const el = e.target; if (!el || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+  document.querySelectorAll('label.flbl').forEach(l => l.classList.remove('flbl'));
+  document.querySelectorAll('.bbrow.active').forEach(r => r.classList.remove('active'));
+  if (el.id) { const l = document.querySelector(`label[for="${el.id}"]`); if (l) l.classList.add('flbl'); }
+  const row = el.closest('.bbrow'); if (row) row.classList.add('active');
+  if (touchUI()) setTimeout(() => { if (document.activeElement === el) ensureVisible(el); }, 300);   // after the phone keyboard opens
+});
+document.addEventListener('focusout', e => {
+  const el = e.target; if (!el || !el.id) return;
+  const l = document.querySelector(`label[for="${el.id}"]`); if (l) l.classList.remove('flbl');
+  const row = el.closest && el.closest('.bbrow'); if (row) row.classList.remove('active');
+});
 
 // Stock
 function itemRowHTML(it) {
