@@ -183,6 +183,23 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 .rnsrc{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;font-size:14px;color:var(--muted)}
 .rnsrc b{color:var(--text)}
 .rnx{display:block;font-size:13px;font-weight:500}
+/* v22: open batch estimate (Base + actual refined weight) */
+.best{margin-top:12px;padding:12px;border:2px solid var(--goldline);border-radius:12px;background:var(--goldbg)}
+.best h3{margin:0 0 2px;font-size:16px}
+.best .row2{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}   /* side by side when there is room, else stacked */
+.best .row2>div{min-width:0}
+.best label{margin-top:10px}
+.best input{font-size:22px;font-weight:800;text-align:center;min-height:56px;padding:8px}
+.best input:focus{padding:7px}
+.best .sumlist div{gap:10px}
+.best .sumlist div>span{min-width:0}
+.best .sumlist div.big{flex-wrap:wrap}
+.best .sumlist div.big b{margin-left:auto}
+.best .befor{display:block;font-size:13px;color:var(--muted);font-weight:500}
+.best .besrc{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:8px;font-size:13px;color:var(--muted)}
+.best .besrc .btn{width:auto;margin:0;min-height:44px;padding:8px 12px;font-size:14px}
+.bediff.pos{color:var(--green)}.bediff.neg{color:var(--red)}
+@media (max-width:899px){.best{padding:10px}.best .row2{grid-template-columns:1fr;gap:0}.best input{font-size:24px}}
 .hidden{display:none!important}
 .eye{border:0;background:#efe9da;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 10px;flex:none;vertical-align:middle}
 .eye svg{width:24px;height:24px}
@@ -299,8 +316,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 21;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase';
+const APP_VERSION = 22;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -489,13 +506,15 @@ let lastTop = null;
 function softRender() {
   const top = banners();
   const rnTyping = view === 'sales' && $('#rnBase') && document.activeElement === $('#rnBase') && rnTotals().n > 0;   // keep the box being typed in
-  if (document.querySelector('#modal') || top !== lastTop || !(view === 'buy' || view === 'quote' || rnTyping) || !$('#app').firstElementChild) {
+  const beT = beTyping();   // v22: a batch Base / actual weight box being typed in is kept too
+  if (document.querySelector('#modal') || top !== lastTop || !(view === 'buy' || view === 'quote' || rnTyping || beT) || !$('#app').firstElementChild) {
     if (document.querySelector('#modal')) { header(); renderNet(); return; }
     return render();
   }
   header(); renderNet();
   if (view === 'buy' && BB.on) { bbTotals(); }
-  else if (view === 'sales') { $('#rnFigs').innerHTML = rnFigsHTML(rnTotals()); rnUpdate(); const r = $('#salesRest'); if (r) r.innerHTML = salesRestHTML(); }
+  else if (view === 'sales') { const f = $('#rnFigs'); if (f) { f.innerHTML = rnFigsHTML(rnTotals()); rnUpdate(); }
+    const r = $('#salesRest'); if (r && !beT) { r.innerHTML = salesRestHTML(); bindBE(); } else document.querySelectorAll('.best').forEach(beUpdate); }
   else if (view === 'buy') { const n = $('#nextNo'); if (n) n.textContent = nextNoTxt(); const l = $('#lastAdded'); if (l) l.innerHTML = lastAddedHTML(); buyHint(); }
   else { const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value); const b = $('#bqCard'); if (b) b.innerHTML = bqHTML(); }
   applyEye();
@@ -506,6 +525,7 @@ async function refresh(quiet) {
   try {
     const n = pendingQ().length ? await syncQueue({ noRefresh: true }) : 0;
     await api('getState'); if (!quiet && !n) toast('Updated from the sheet');   // keep the "Synced N" toast
+    beFlush();   // v22: batch estimates typed while the sheet was out of reach
   }
   catch (e) { if (e.net) { netErr = ''; if (!quiet) toast(navigator.onLine ? e.message : "You're offline. Showing what was saved " + whenTxt(lastSync) + '.', 4000); } else { netErr = e.message; if (!quiet) toast(e.message, 4000); } }
   finally { busy = false; $('#refreshBtn').classList.remove('spin'); softRender(); }
@@ -687,7 +707,7 @@ function render() {
   if (view === 'quote') { app.innerHTML = top + bar + quoteHTML(); bindQuote(); }
   else if (view === 'buy') { app.innerHTML = top + bar + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
   else if (view === 'stock') app.innerHTML = top + bar + (needData() || stockHTML());
-  else if (view === 'sales') { app.innerHTML = top + bar + (needData() || salesHTML()); bindRN(); }
+  else if (view === 'sales') { app.innerHTML = top + bar + (needData() || salesHTML()); bindRN(); bindBE(); }
   else if (view === 'dash') app.innerHTML = top + bar + (needData() || dashHTML());
   applyEye();
 }
@@ -1205,6 +1225,125 @@ function bindRN() {
   el.addEventListener('blur', () => { if (el.value.trim() === '') { el.value = rnToday(); rnUpdate(); } });
 }
 
+// ---------- v22: the open batch's estimate: "Base" (expected selling base / g) + "Actual refined weight (g)" ----------
+// Est. sale value = Base × weight, weight = actual refined weight when typed, else the computed refined grams (sheet R);
+// Est. profit = sale value − cost incl. fee (cost of items + refining fee, sheet T), the same rule as the sheet / "If refined now".
+// Base empty = the batch's own base (frozen at refine). Values are kept per batch ID on this device (BE_KEY) and, with
+// Api.gs v7, on the sheet (Refining AD:AE via setBatchEstimate), so PC and phone share them. A value not yet on the sheet
+// is marked pending (pb / pa) and sent when the sheet can take it; until then this device's value wins.
+// BE_KEY: { [batchId]: { base: number|null, actual: number|null, pb: bool, pa: bool } }
+const BASE_MIN = 1000, BASE_MAX = 50000;   // same limits as the sheet (Api.gs baseMin / baseMax)
+const beAll = () => { const v = load(BE_KEY); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; };
+const beV7 = () => !!(ST && Number(ST.version) >= 7);
+function beVals(b) {
+  const e = beAll()[b.id] || {}, v7 = beV7();
+  const pick = (pend, loc, srv) => pend || !v7 ? (hasNum(loc) ? Number(loc) : (v7 && hasNum(srv) ? Number(srv) : null)) : (hasNum(srv) ? Number(srv) : null);
+  return { base: pick(e.pb, e.base, b.estBase), actual: pick(e.pa, e.actual, b.actualG), pending: !!(e.pb || e.pa) };
+}
+// Figures for batch b at base text bt / actual text gt (what is in the boxes right now).
+function beCalc(b, bt, gt) {
+  const B = parseNum(bt), G = parseNum(gt), comp = Number(b.refinedG) || 0, cost = Number(b.costInclFee) || 0;
+  const okB = B != null && !isNaN(B) && B > 0, badG = G != null && (isNaN(G) || G <= 0), useG = G != null && !badG;
+  const w = useG ? G : comp, value = okB ? round2(w * B) : null;
+  return { okB, badB: B != null && !okB, B, comp, useG, badG, G: useG ? G : null, w, cost, value, profit: okB ? round2(value - cost) : null, diff: useG ? G - comp : null };
+}
+const beBaseTxt = (b, v) => (v.base != null ? v.base : Number(b.base) || 0).toFixed(2);
+const beGTxt = v => v.actual != null ? String(v.actual) : '';
+function beOutHTML(b, c) {
+  const sd = c.diff == null ? '' : (round2(c.diff) > 0 ? '+' : round2(c.diff) < 0 ? '−' : '') + grams(Math.abs(c.diff));
+  return `<div><span>Computed refined weight</span><b>${grams(c.comp)} g</b></div>
+      ${c.useG ? `<div class="beDiff"><span>Difference (actual − computed)</span><b class="bediff ${sgn(c.diff)}">${sd} g</b></div>` : ''}
+      <div><span>Weight used<small class="befor">${c.useG ? 'actual refined weight' : 'computed (no actual weight yet)'}</small></span><b>${grams(c.w)} g</b></div>
+      <div><span>Est. sale value<small class="befor">${c.okB ? `Base ${peso(c.B)} × ${grams(c.w)} g` : 'type a Base'}</small></span><b>${c.okB ? peso(c.value) : '–'}</b></div>
+      <div><span>Cost incl. fee</span><b>${peso(c.cost)}</b></div>
+      <div class="big"><span>Est. profit<small class="befor">at this Base × ${c.useG ? 'actual' : 'computed'} weight − cost incl. fee</small></span><b>${c.okB ? prof(c.profit, 'sales:batches') : '–'}</b></div>
+      ${c.badB ? '<div class="muted"><span>Base must be a price per gram, e.g. 8,250.00</span></div>' : ''}${c.badG ? '<div class="muted"><span>Actual weight must be grams above 0, e.g. 120.50</span></div>' : ''}`;
+}
+const beKey = b => encodeURIComponent(b.id).replace(/[^A-Za-z0-9]/g, '_');
+function beSrcHTML(b, v) {
+  const where = !v.pending ? (beV7() ? 'Saved on the sheet (PC + phone)' : 'Saved on this device')
+    : beV7() ? (isOffline() ? 'Saved on this device · goes to the sheet when online' : 'Saving to the sheet…') : 'Saved on this device · shared with your other devices once Api.gs v7 is deployed';
+  return `<span class="beWhere">${esc(where)}</span>${v.base != null ? `<button type="button" class="btn light sm beReset" onmousedown="event.preventDefault()" onclick="beReset(this)">Use batch base ${peso(b.base)}</button>` : ''}`;
+}
+function beHTML(b) {
+  const v = beVals(b), k = beKey(b), c = beCalc(b, beBaseTxt(b, v), beGTxt(v));
+  return `<div class="best" id="be_${k}" data-id="${esc(b.id)}"><h3>Profit estimate</h3>
+    <div class="muted" style="font-size:13px">Based on the Base you expect to sell at × the actual refined weight (computed weight until you type it).</div>
+    <div class="row2"><div><label for="beB_${k}">Base <span class="hint">₱/g</span></label><input id="beB_${k}" class="beB" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(beBaseTxt(b, v))}" placeholder="${esc((Number(b.base) || 0).toFixed(2))}"></div>
+    <div><label for="beG_${k}">Actual refined weight (g)</label><input id="beG_${k}" class="beG" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(beGTxt(v))}" placeholder="${esc(grams(b.refinedG))} computed"></div></div>
+    <div class="sumlist beOut">${beOutHTML(b, c)}</div>
+    <div class="besrc">${beSrcHTML(b, v)}</div></div>`;
+}
+const beBox = el => el && el.closest('.best');
+const beBatch = box => box && (ST.batches || []).find(x => x.id === box.dataset.id);
+function beUpdate(box) {   // live: only this batch's figures + source line are redrawn (the boxes keep focus)
+  const b = beBatch(box); if (!b) return;
+  box.querySelector('.beOut').innerHTML = beOutHTML(b, beCalc(b, box.querySelector('.beB').value, box.querySelector('.beG').value));
+  box.querySelector('.besrc').innerHTML = beSrcHTML(b, beVals(b)); applyEye();
+}
+// Keeps what is typed (valid values only) on this device and marks it for the sheet. f = 'base' | 'actual'.
+function beStore(b, f, val) {
+  const all = beAll(), e = all[b.id] || {}, cur = beVals(b)[f];
+  if (cur === val) return false;
+  e[f] = val; e[f === 'base' ? 'pb' : 'pa'] = true; all[b.id] = e; save(BE_KEY, all); return true;
+}
+function beCommit(el, final) {   // final: blur / Enter. Empty Base = the batch base again; empty weight = computed.
+  const box = beBox(el), b = beBatch(box); if (!b) return;
+  const isB = el.classList.contains('beB'), t = el.value.trim(), n = parseNum(t);
+  if (isB) {
+    if (t === '') { beStore(b, 'base', null); if (final) el.value = (Number(b.base) || 0).toFixed(2); }
+    else if (n != null && !isNaN(n) && n >= BASE_MIN && n <= BASE_MAX) { beStore(b, 'base', round2(n)); if (final) el.value = round2(n).toFixed(2); }
+    else if (final && n != null && !isNaN(n) && n > 0) toast('Base must be between ₱1,000 and ₱50,000 per gram');
+  } else {
+    if (t === '') beStore(b, 'actual', null);
+    else if (n != null && !isNaN(n) && n > 0 && n <= 1e6) beStore(b, 'actual', Math.round(n * 1e4) / 1e4);
+  }
+  beUpdate(box); if (final) beFlush();
+}
+function beReset(btn) {
+  const box = beBox(btn), b = beBatch(box); if (!b) return;
+  beStore(b, 'base', null); box.querySelector('.beB').value = (Number(b.base) || 0).toFixed(2); beUpdate(box); beFlush();
+}
+function bindBE() {
+  document.querySelectorAll('.best').forEach(box => {
+    const bi = box.querySelector('.beB'), gi = box.querySelector('.beG');
+    [bi, gi].forEach(el => {
+      cellInput(el, { escape: true });
+      el.addEventListener('input', () => beCommit(el, false));
+      el.addEventListener('blur', () => beCommit(el, true));
+      el.addEventListener('keydown', e => { if (e.key !== 'Enter' || e.isComposing) return; e.preventDefault();
+        if (el === bi) { gi.focus(); } else el.blur(); });   // Enter: Base -> actual weight -> done
+    });
+  });
+  beFlush();
+}
+// Sends pending values to the sheet (Api.gs v7). Quiet: a failure keeps them pending for the next refresh.
+let beBusy = false;
+async function beFlush() {
+  if (beBusy || !beV7() || !connected() || !navigator.onLine) return;
+  const ids = new Set((ST.batches || []).map(x => x.id));
+  let all = beAll(); const todo = Object.keys(all).filter(id => (all[id].pb || all[id].pa) && ids.has(id)); if (!todo.length) return;
+  beBusy = true;
+  try {
+    for (const id of todo) {
+      const e = beAll()[id]; if (!e || !(e.pb || e.pa)) continue;
+      const sent = { base: e.base, actual: e.actual }, data = { batchId: id };
+      if (e.pb) data.sellBase = hasNum(e.base) ? e.base : ''; if (e.pa) data.actualG = hasNum(e.actual) ? e.actual : '';
+      let j;
+      try { j = await api('setBatchEstimate', data, true, { timeout: 30000 }); }
+      catch (err) { if (err.net) break; toast(err.message, 4000); j = { ok: true, failed: true }; }
+      all = beAll(); const now = all[id] || {};
+      if (data.sellBase !== undefined && now.base === sent.base) now.pb = false;   // changed again meanwhile: stays pending
+      if (data.actualG !== undefined && now.actual === sent.actual) now.pa = false;
+      all[id] = now; save(BE_KEY, all);
+      const b = (ST.batches || []).find(x => x.id === id);
+      if (b && !j.failed) { if ('estBase' in j) b.estBase = j.estBase; if ('actualG' in j) b.actualG = j.actualG; save(CACHE_KEY, ST); }
+    }
+  } finally { beBusy = false; }
+  document.querySelectorAll('.best').forEach(box => { const b = beBatch(box); if (b) box.querySelector('.besrc').innerHTML = beSrcHTML(b, beVals(b)); });
+}
+const beTyping = () => view === 'sales' && !!document.activeElement && !!beBox(document.activeElement) && document.activeElement.matches('.beB, .beG');
+
 // Refining & sales
 function salesHTML() { return rnCardHTML() + `<div id="salesRest">${salesRestHTML()}</div>`; }
 function salesRestHTML() {
@@ -1212,9 +1351,10 @@ function salesRestHTML() {
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
     <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
     ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${grams(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${grams(b.refinedG)} g</b></div>
-    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${grams(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
-    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit, 'sales:batches')}</b></div>`
+    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${grams(b.silverG)} g</b></div>` : ''}${b.status === 'Refining' ? '' : `<div><span>Base</span><br><b>${peso(b.base)}</b></div>`}
+    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div>`
       : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit, 'sales:batches')}</b></div>`}</div>
+    ${b.status === 'Refining' ? beHTML(b) : ''}
     <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" data-id="${esc(b.id)}" onclick="openSale(this.dataset.id)">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
     : '<div class="empty">No refining batches yet. Use Batch refine on the Stock screen.</div>';
   const L = ST.sales || [];
@@ -1225,10 +1365,12 @@ function salesRestHTML() {
 }
 function openSale(id) {
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
+  const ev = b.status === 'Refining' ? beVals(b) : null;   // v22: the Base typed on the batch prefills the sell base
   modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${grams(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}</div>
     <label for="sd">Sell date</label><input id="sd" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(b.sellDate) ? b.sellDate : todayISO())}">
-    <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(b.sellBase ?? (ST.base || ''))}">
+    <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(b.sellBase ?? (ev && ev.base != null ? ev.base : (ST.base || '')))}">
     <label for="sa">Actual amount received (₱) <span class="hint">optional, overrides grams × base</span></label><input id="sa" type="text" inputmode="decimal" value="${esc(b.actualAmt ?? '')}">
+    ${ev && ev.actual != null ? `<div class="note" id="sActNote">Actual refined weight ${grams(ev.actual)} g (computed ${grams(b.refinedG)} g). The sheet values the sale at computed grams × sell base unless you enter the amount received.</div>` : ''}
     <div id="scalc"></div>
     <button class="btn green" id="sgo">${b.recorded ? 'Save correction' : 'Record sale'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const calc = () => { const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
