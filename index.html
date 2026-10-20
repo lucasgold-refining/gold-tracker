@@ -269,6 +269,14 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
   .fit > .fv, .fit > .pv, .stk .figs b.fit > .fv{display:block;white-space:nowrap;font-variant-numeric:tabular-nums}
   .month .sec b,.tile .muted .pv{white-space:nowrap;font-variant-numeric:tabular-nums}
 }
+@media (max-width:899px){
+  /* v21: phone header. The base-price pill gets its own full-width line under the title and buttons, so the amount,
+     "/ g base" and the source/updated line always show in full (no ellipsis) on any phone width. */
+  #refreshBtn{margin-left:auto}
+  .basepill{order:8;flex:1 1 100%;margin-left:0;text-align:left;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:10px;row-gap:1px;min-height:44px;padding:5px 12px}
+  .basepill b{flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .basepill small{flex:1 1 auto;min-width:0;max-width:none;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+}
 </style>
 </head>
 <body>
@@ -291,7 +299,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
