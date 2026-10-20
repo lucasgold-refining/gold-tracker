@@ -177,6 +177,10 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 .sumlist div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:16px}
 .sumlist div b{white-space:nowrap}
 .sumlist div.big b{font-size:20px}
+/* v18: "If refined now" card (Refining tab) */
+.rncell input.bigin{min-height:64px;font-size:30px}
+.rnsrc{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;font-size:14px;color:var(--muted)}
+.rnsrc b{color:var(--text)}
 .hidden{display:none!important}
 .eye{border:0;background:#efe9da;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 10px;flex:none;vertical-align:middle}
 .eye svg{width:24px;height:24px}
@@ -270,8 +274,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 17;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask';
+const APP_VERSION = 18;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -295,12 +299,13 @@ const sgn = n => n == null ? '' : (round2(n) < 0 ? 'neg' : 'pos');
 const MASK = '₱ ••••••';
 const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-const GROUPS = { stock: ['list', 'refine'], sales: ['batches', 'sales', 'calc'], dash: ['stock', 'month', 'all'] };
+const GROUPS = { stock: ['list', 'refine'], sales: ['batches', 'sales', 'calc', 'refnow'], dash: ['stock', 'month', 'all'] };   // refnow: v18 "If refined now" card
 const TABS = Object.keys(GROUPS);
 // Saved as { stock: { m: 0|1, list: 0|1, refine: 0|1 }, sales: {...}, dash: {...} }: m = main toggle; 1 = hidden, 0 = shown, missing = hidden.
 // Anything else (v15 settings like { stock: 1 }, quote / buy) is dropped.
 const readTM = () => { const v = load(TM_KEY); const o = {};
   if (v && typeof v === 'object') TABS.forEach(t => { const x = v[t]; if (x && typeof x === 'object') ['m'].concat(GROUPS[t]).forEach(g => { if (x[g] === 0 || x[g] === 1) { o[t] = o[t] || {}; o[t][g] = x[g]; } }); });
+  if (o.sales && (o.sales.m === 0 || o.sales.m === 1) && o.sales.refnow === undefined) o.sales.refnow = o.sales.m;   // v18: the new card starts as the Refining main toggle is
   if (v && JSON.stringify(v) !== JSON.stringify(o)) save(TM_KEY, o);
   return o; };
 let TM = readTM();
@@ -440,12 +445,14 @@ function applyAdded(j, it) {
 let lastTop = null;
 function softRender() {
   const top = banners();
-  if (document.querySelector('#modal') || top !== lastTop || !(view === 'buy' || view === 'quote') || !$('#app').firstElementChild) {
+  const rnTyping = view === 'sales' && $('#rnBase') && document.activeElement === $('#rnBase') && rnTotals().n > 0;   // keep the box being typed in
+  if (document.querySelector('#modal') || top !== lastTop || !(view === 'buy' || view === 'quote' || rnTyping) || !$('#app').firstElementChild) {
     if (document.querySelector('#modal')) { header(); renderNet(); return; }
     return render();
   }
   header(); renderNet();
   if (view === 'buy' && BB.on) { bbTotals(); }
+  else if (view === 'sales') { $('#rnFigs').innerHTML = rnFigsHTML(rnTotals()); rnUpdate(); const r = $('#salesRest'); if (r) r.innerHTML = salesRestHTML(); }
   else if (view === 'buy') { const n = $('#nextNo'); if (n) n.textContent = nextNoTxt(); const l = $('#lastAdded'); if (l) l.innerHTML = lastAddedHTML(); buyHint(); }
   else { const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value); const b = $('#bqCard'); if (b) b.innerHTML = bqHTML(); }
   applyEye();
@@ -632,7 +639,7 @@ function render() {
   if (view === 'quote') { app.innerHTML = top + bar + quoteHTML(); bindQuote(); }
   else if (view === 'buy') { app.innerHTML = top + bar + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
   else if (view === 'stock') app.innerHTML = top + bar + (needData() || stockHTML());
-  else if (view === 'sales') app.innerHTML = top + bar + (needData() || salesHTML());
+  else if (view === 'sales') { app.innerHTML = top + bar + (needData() || salesHTML()); bindRN(); }
   else if (view === 'dash') app.innerHTML = top + bar + (needData() || dashHTML());
   applyEye();
 }
@@ -1088,8 +1095,69 @@ async function openRefine() {
   };
 }
 
+// ---------- "If refined now" (v18): read-only estimate of a batch refine of everything In stock ----------
+// Same math as the sheet's Batch refine preview (Api.gs goldApiBatchPreview_ + goldApiPickStock_), from the stock the app has:
+//   raw g = weight BHY / BHYPerGram; refined g = raw g × purity; cost = Σ cost; fee = RefiningFee (once, if any items);
+//   silver = (refined g × (refined g / raw g) / SilverDivisor) × SilverMultiplier − refined g;
+//   sale value = refined g × base (= base × purity × grams, as everywhere in the app); profit = value − cost − fee.
+// Never writes to the sheet. The base typed here is remembered on this device (RN_KEY); none typed = today's base.
+const rnd = (x, d) => Math.round(x * Math.pow(10, d)) / Math.pow(10, d);   // = goldApiR_
+function rnTotals() {
+  const s = S() || {}, bhy = s.bhyPerGram || 2;
+  const L = (ST && ST.stock || []).map(x => ({ g: hasNum(x.weightBhy) ? Number(x.weightBhy) / bhy : Number(x.grams) || 0, p: Number(x.purity) || 0, c: Number(x.cost) || 0, local: false }))
+    .concat(pendingQ().map(x => ({ g: Number(x.weightBhy) / bhy, p: Number(x.purity) || 0, c: Number(x.cost) || 0, local: true })));
+  const t = L.reduce((a, x) => { a.n++; a.raw += x.g; a.ref += x.g * x.p; a.cost += x.c; a.local += x.local ? 1 : 0; return a; }, { n: 0, raw: 0, ref: 0, cost: 0, local: 0 });
+  t.fee = t.n ? (Number(s.refiningFee) || 0) : 0;
+  const div = Number(s.silverDivisor), mul = Number(s.silverMultiplier), rawPct = t.raw ? t.ref / t.raw : 0;
+  t.silver = div && mul && t.ref ? (t.ref * rawPct / div) * mul - t.ref : 0;
+  return t;
+}
+const rnStored = () => { const v = load(RN_KEY); return typeof v === 'string' && v.trim() !== '' ? v : null; };
+const rnToday = () => hasNum(ST && ST.base) ? Number(ST.base).toFixed(2) : '';
+function rnFigsHTML(t) {
+  return `<div><span>Items</span><b>${t.n}</b></div>
+      <div><span>Raw weight</span><b>${g3(rnd(t.raw, 3))} g <span class="muted">· silver needed ${g3(rnd(t.silver, 3))} g</span></b></div>
+      <div><span>Refined grams (est.)</span><b>${g3(rnd(t.ref, 3))} g</b></div>
+      <div><span>Cost of items</span><b>${peso(t.cost)}</b></div>
+      <div><span>Refining fee</span><b>${peso(t.fee)}</b></div>
+      <div><span>Cost incl. fee</span><b>${peso(t.cost + t.fee)}</b></div>`;
+}
+function rnOutHTML(t, txt) {
+  const base = parseNum(txt), okB = base != null && !isNaN(base) && base > 0;
+  const value = okB ? t.ref * base : null;
+  return `<div><span>Est. sale value</span><b>${okB ? peso(value) : '–'}</b></div>
+      <div class="big"><span>Est. profit ${eyeBtn('sales:refnow')}</span><b>${okB ? prof(round2(value - t.cost - t.fee), 'sales:refnow') : '–'}</b></div>
+      ${okB ? '' : '<div class="muted"><span>Type a selling base price per gram, e.g. 8,250.00</span></div>'}`;
+}
+function rnCardHTML() {
+  const t = rnTotals();
+  if (!t.n) return `<div class="card" id="rnCard"><h2>🔥 If refined now</h2><div class="empty" id="rnEmpty">Nothing in stock. When you have In stock items, this shows what refining them all would give.</div></div>`;
+  const st = rnStored();
+  return `<div class="card" id="rnCard"><h2>🔥 If refined now</h2>
+    <div class="muted">Estimate for all ${t.n} In stock items${t.local ? ` (incl. ${t.local} not synced yet)` : ''}. Nothing is sent to the sheet.</div>
+    <div class="sumlist" id="rnFigs">${rnFigsHTML(t)}</div>
+    <label for="rnBase" style="margin-top:12px">Selling base price (₱/g)</label>
+    <div class="cell rncell" id="rnCell"><input id="rnBase" class="bigin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(st != null ? st : rnToday())}" placeholder="${esc(rnToday() || '0.00')}"></div>
+    <div class="rnsrc"><span id="rnSrc">${st != null ? 'Your price' : `Today's base <b>${peso(ST.base)}</b>`}</span><button type="button" class="btn light sm" id="rnReset" onmousedown="event.preventDefault()" onclick="rnReset()">Use today's base</button></div>
+    <div class="sumlist" id="rnOut">${rnOutHTML(t, st != null ? st : rnToday())}</div></div>`;
+}
+function rnUpdate() {   // live: only the estimate under the box is redrawn
+  const el = $('#rnBase'), o = $('#rnOut'); if (!el || !o) return;
+  o.innerHTML = rnOutHTML(rnTotals(), el.value); const st = rnStored();
+  $('#rnSrc').innerHTML = st != null ? 'Your price' : `Today's base <b>${peso(ST.base)}</b>`; applyEye();
+}
+function rnReset() { localStorage.removeItem(RN_KEY); const el = $('#rnBase'); if (el) el.value = rnToday(); rnUpdate(); }
+function bindRN() {
+  const el = $('#rnBase'); if (!el) return;
+  cellInput(el, { box: $('#rnCell'), escape: true });
+  el.addEventListener('input', () => { const v = el.value.trim(); if (v === '') localStorage.removeItem(RN_KEY); else save(RN_KEY, v); rnUpdate(); });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); el.blur(); } });
+  el.addEventListener('blur', () => { if (el.value.trim() === '') { el.value = rnToday(); rnUpdate(); } });
+}
+
 // Refining & sales
-function salesHTML() {
+function salesHTML() { return rnCardHTML() + `<div id="salesRest">${salesRestHTML()}</div>`; }
+function salesRestHTML() {
   const B = ST.batches || [];
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
     <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
