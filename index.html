@@ -181,6 +181,7 @@ tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 .rncell input.bigin{min-height:64px;font-size:30px}
 .rnsrc{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;font-size:14px;color:var(--muted)}
 .rnsrc b{color:var(--text)}
+.rnx{display:block;font-size:13px;font-weight:500}
 .hidden{display:none!important}
 .eye{border:0;background:#efe9da;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 10px;flex:none;vertical-align:middle}
 .eye svg{width:24px;height:24px}
@@ -274,7 +275,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -576,6 +577,11 @@ function renderNet() {
 }
 
 // ---------- quote (same rules as the sheet) ----------
+// Already-refined gold: purity at or above the sheet's FullBaseMinPurity (99.8%). Gets the full base on Quote,
+// and (v19) needs no silver: the "If refined now" card, like the sheet's Batch refine preview (Api.gs v6).
+const fullMinOf = s => { const f = Number((s || {}).fullMin); return f > 0 ? f : 0.998; };
+const isFullPurity = (p, s) => Number(p) + 1e-9 >= fullMinOf(s || S());
+const fullPctTxt = f => pct(f > 0 ? f : fullMinOf(S())).replace(/0+%$/, '%').replace(/\.%$/, '%');   // 0.998 -> "99.8%"
 // Quote-tab deduction (purity points), chosen on this device: 0.5%, 1% (default, today's rule) or 1.5%.
 const DED_OPTS = [0.005, 0.01, 0.015];
 let DED = (() => { const v = Number(load(DED_KEY)); return DED_OPTS.some(x => Math.abs(x - v) < 1e-9) ? v : 0.01; })();
@@ -584,7 +590,7 @@ const dedTxt = m => (m * 100).toLocaleString('en-GB') + '%';
 function quoteFor(p, m) {
   const s = S(); if (!s || !s.base || p == null || isNaN(p)) return null;
   if (m == null) m = DED;
-  const bhy = s.bhyPerGram || 2, full = p + 1e-9 >= s.fullMin;
+  const bhy = s.bhyPerGram || 2, full = isFullPurity(p, s);
   const perGram = full ? s.base : Math.max(0, s.base * (p - m));
   return { perGram, perBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
 }
@@ -1084,7 +1090,7 @@ async function openRefine() {
       <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
       <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
       <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(p.estProfit, 'stock:refine')}</b></div>
-      <div><span>Silver needed</span><b>${g3(p.silverG)} g</b></div>
+      <div><span>Silver needed${p.silverExcl ? ` <small class="muted rnx">excl. ${p.silverExcl} item${p.silverExcl === 1 ? '' : 's'} ≥ ${fullPctTxt(p.fullMin)}</small>` : ''}</span><b>${g3(p.silverG)} g</b></div>
     </div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
     <button class="btn gold" id="rgo">Refine ${p.count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
@@ -1098,7 +1104,8 @@ async function openRefine() {
 // ---------- "If refined now" (v18): read-only estimate of a batch refine of everything In stock ----------
 // Same math as the sheet's Batch refine preview (Api.gs goldApiBatchPreview_ + goldApiPickStock_), from the stock the app has:
 //   raw g = weight BHY / BHYPerGram; refined g = raw g × purity; cost = Σ cost; fee = RefiningFee (once, if any items);
-//   silver = (refined g × (refined g / raw g) / SilverDivisor) × SilverMultiplier − refined g;
+//   silver = (refined g × (refined g / raw g) / SilverDivisor) × SilverMultiplier − refined g,
+//            v19: over the items BELOW 99.8% only (99.8%+ is already refined); they still count in everything else;
 //   sale value = refined g × base (= base × purity × grams, as everywhere in the app); profit = value − cost − fee.
 // Never writes to the sheet. The base typed here is remembered on this device (RN_KEY); none typed = today's base.
 const rnd = (x, d) => Math.round(x * Math.pow(10, d)) / Math.pow(10, d);   // = goldApiR_
@@ -1106,17 +1113,19 @@ function rnTotals() {
   const s = S() || {}, bhy = s.bhyPerGram || 2;
   const L = (ST && ST.stock || []).map(x => ({ g: hasNum(x.weightBhy) ? Number(x.weightBhy) / bhy : Number(x.grams) || 0, p: Number(x.purity) || 0, c: Number(x.cost) || 0, local: false }))
     .concat(pendingQ().map(x => ({ g: Number(x.weightBhy) / bhy, p: Number(x.purity) || 0, c: Number(x.cost) || 0, local: true })));
-  const t = L.reduce((a, x) => { a.n++; a.raw += x.g; a.ref += x.g * x.p; a.cost += x.c; a.local += x.local ? 1 : 0; return a; }, { n: 0, raw: 0, ref: 0, cost: 0, local: 0 });
+  const t = L.reduce((a, x) => { a.n++; a.raw += x.g; a.ref += x.g * x.p; a.cost += x.c; a.local += x.local ? 1 : 0;
+    if (isFullPurity(x.p, s)) a.high++; else { a.sRaw += x.g; a.sRef += x.g * x.p; } return a; }, { n: 0, raw: 0, ref: 0, cost: 0, local: 0, high: 0, sRaw: 0, sRef: 0 });
   t.fee = t.n ? (Number(s.refiningFee) || 0) : 0;
-  const div = Number(s.silverDivisor), mul = Number(s.silverMultiplier), rawPct = t.raw ? t.ref / t.raw : 0;
-  t.silver = div && mul && t.ref ? (t.ref * rawPct / div) * mul - t.ref : 0;
+  const div = Number(s.silverDivisor), mul = Number(s.silverMultiplier), rawPct = t.sRaw ? t.sRef / t.sRaw : 0;
+  t.silver = div && mul && t.sRef ? (t.sRef * rawPct / div) * mul - t.sRef : 0;   // only the items that get refined
   return t;
 }
 const rnStored = () => { const v = load(RN_KEY); return typeof v === 'string' && v.trim() !== '' ? v : null; };
 const rnToday = () => hasNum(ST && ST.base) ? Number(ST.base).toFixed(2) : '';
 function rnFigsHTML(t) {
   return `<div><span>Items</span><b>${t.n}</b></div>
-      <div><span>Raw weight</span><b>${g3(rnd(t.raw, 3))} g <span class="muted">· silver needed ${g3(rnd(t.silver, 3))} g</span></b></div>
+      <div><span>Raw weight</span><b>${g3(rnd(t.raw, 3))} g</b></div>
+      <div id="rnSilver"><span>Silver needed${t.high ? ` <small class="muted rnx">excl. ${t.high} item${t.high === 1 ? '' : 's'} ≥ ${fullPctTxt()}</small>` : ''}</span><b>${g3(rnd(t.silver, 3))} g</b></div>
       <div><span>Refined grams (est.)</span><b>${g3(rnd(t.ref, 3))} g</b></div>
       <div><span>Cost of items</span><b>${peso(t.cost)}</b></div>
       <div><span>Refining fee</span><b>${peso(t.fee)}</b></div>
