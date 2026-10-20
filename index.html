@@ -199,6 +199,18 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 .calc{margin-top:8px;background:var(--goldbg);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;font-size:16px}
 .calc b{font-size:18px}
 .side-brand{display:none}
+/* v15: per-tab hide-all toggle. Hidden tab: every wrapped value shows as •••• (inputs stay as typed). */
+.tabbar{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 10px;min-height:46px}
+.tabbar .tblbl{font-size:14px;font-weight:700;color:var(--muted)}
+.teye{border:2px solid var(--ink);background:#fff;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-size:16px;font-weight:800;cursor:pointer;flex:none}
+.teye svg{width:22px;height:22px}
+.teye[aria-pressed=true]{background:var(--ink);color:var(--gold2)}
+body.thide .tabbar .tblbl{color:var(--ink)}
+/* the wrappers are invisible: never pick up span styles (e.g. .stk .figs span, .batch .grid span) */
+.hv,.hv>.hr{display:inline!important;font-size:inherit!important;font-weight:inherit!important;color:inherit!important;background:none!important;padding:0!important;margin:0!important;border:0!important}
+body.thide .hv>.hr{display:none!important}
+body.thide .hv::after{content:"••••";letter-spacing:1px;color:var(--muted);font-weight:800}
+body.thide .eye{opacity:.45}
 /* v14: batch purchase screen */
 .bball{background:var(--green);color:#fff;margin-top:12px}
 .bbrow{border:2px solid var(--line);border-left:6px solid var(--line);border-radius:12px;padding:8px 10px 10px;margin-top:10px;background:#fff;transition:background .1s,border-color .1s;scroll-margin:120px 0 110px}
@@ -262,8 +274,8 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 14;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy';
+const APP_VERSION = 15;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -281,13 +293,37 @@ const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 // A profit amount: masked unless SHOW. data-v keeps the number so the eye can flip it in place.
 const prof = (n, extra) => { const has = n != null && !isNaN(n);
-  return `<span class="pv${SHOW || !has ? ' ' + sgn(has ? n : null) : ' masked'}${extra ? ' ' + extra : ''}" data-v="${has ? Number(n) : ''}">${SHOW || !has ? peso(n) : MASK}</span>`; };
+  return hv(`<span class="pv${SHOW || !has ? ' ' + sgn(has ? n : null) : ' masked'}${extra ? ' ' + extra : ''}" data-v="${has ? Number(n) : ''}">${SHOW || !has ? peso(n) : MASK}</span>`); };
 const eyeBtn = () => `<button type="button" class="eye" aria-pressed="${SHOW}" aria-label="${SHOW ? 'Hide profit' : 'Show profit'}" title="${SHOW ? 'Hide profit' : 'Show profit'}" onclick="toggleEye(event)">${SHOW ? EYE_OFF : EYE_OPEN}</button>`;
 function toggleEye(e) { if (e) { e.preventDefault(); e.stopPropagation(); } SHOW = !SHOW; applyEye(); }
 function applyEye() {
   document.querySelectorAll('.pv').forEach(el => { const v = el.dataset.v; if (v === '') return; const n = Number(v);
     el.textContent = SHOW ? peso(n) : MASK; el.classList.toggle('masked', !SHOW); el.classList.toggle('pos', SHOW && n >= 0); el.classList.toggle('neg', SHOW && n < 0); });
   document.querySelectorAll('.eye').forEach(b => { b.setAttribute('aria-pressed', String(SHOW)); const l = SHOW ? 'Hide profit' : 'Show profit'; b.setAttribute('aria-label', l); b.title = l; b.innerHTML = SHOW ? EYE_OFF : EYE_OPEN; });
+}
+// ---------- v15: per-tab "hide all values" (on top of the profit eye) ----------
+// Each tab (quote, buy, stock, sales, dash) has its own switch, remembered on this device. Default: values visible.
+// Hidden tab: every value wrapped by hv() (money, weights, grams, purities, counts, profit) shows as ••••, whatever the profit eye says.
+// Visible tab: nothing changes, so the profit eye (masked on every open) works exactly as before. Inputs are never masked.
+const TABS = ['quote', 'buy', 'stock', 'sales', 'dash'];
+let TM = (() => { const v = load(TM_KEY); const o = {}; if (v && typeof v === 'object') TABS.forEach(t => { if (v[t] === 1 || v[t] === true) o[t] = 1; }); return o; })();
+const tabMasked = v => !!TM[v || view];
+const hv = s => `<span class="hv"><span class="hr">${s}</span></span>`;
+const H = n => hv(peso(n)), HW = w => hv(wt(w)), HP = p => hv(pct(p)), HG3 = w => hv(g3(w)), HG2 = w => hv(g2(w));
+const TAB_NAME = { quote: 'Quote', buy: 'Buy', stock: 'Stock', sales: 'Refining', dash: 'Dashboard' };
+function tabBarHTML() {
+  const m = tabMasked(), l = m ? 'Show values on this tab' : 'Hide values on this tab';
+  return `<div class="tabbar" id="tabBar"><span class="tblbl" id="tabLbl">${m ? '🔒 Values hidden' : 'Values visible'}</span><button type="button" class="teye" id="tabEye" data-tab="${view}" aria-pressed="${m}" aria-label="${l}" title="${l}" onmousedown="event.preventDefault()" onclick="toggleTab(event)">${m ? EYE_OPEN : EYE_OFF}<span>${m ? 'Show' : 'Hide'}</span></button></div>`;
+}
+function applyTabMask() {
+  const m = tabMasked(); document.body.classList.toggle('thide', m); document.body.dataset.tab = view;
+  const b = $('#tabEye'); if (b) { const l = m ? 'Show values on this tab' : 'Hide values on this tab';
+    b.dataset.tab = view; b.setAttribute('aria-pressed', String(m)); b.setAttribute('aria-label', l); b.title = l; b.innerHTML = (m ? EYE_OPEN : EYE_OFF) + `<span>${m ? 'Show' : 'Hide'}</span>`; }
+  const t = $('#tabLbl'); if (t) t.textContent = m ? '🔒 Values hidden' : 'Values visible';
+}
+function toggleTab(e) {   // flips only this tab; never re-draws, so a box being typed in keeps focus and text
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (TM[view]) delete TM[view]; else TM[view] = 1; save(TM_KEY, TM); applyTabMask();
 }
 const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
 const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -534,7 +570,7 @@ function setDed(v) {
   document.querySelectorAll('#dedSeg button').forEach(b => b.setAttribute('aria-pressed', String(Math.abs(Number(b.dataset.ded) - v) < 1e-9)));
   const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value);
   const bc = $('#bqCard'); if (bc) bc.innerHTML = bqHTML();
-  const bl = $('#qBaseLine'); if (bl) bl.textContent = baseLineHTML();
+  const bl = $('#qBaseLine'); if (bl) bl.innerHTML = hv(esc(baseLineHTML()));
 }
 
 // ---------- views ----------
@@ -545,7 +581,7 @@ function focusQuote() { const el = $('#qp'); if (el && matchMedia('(min-width:90
 
 function header() {
   const s = S();
-  $('#basePill').innerHTML = s && s.base ? `<b>${peso(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span><span class="pen" aria-hidden="true">✏️</span></b><small>${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
+  $('#basePill').innerHTML = s && s.base ? `<b>${H(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span><span class="pen" aria-hidden="true">✏️</span></b><small>${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
     : `<b>₱—</b><small>${connected() ? 'Loading…' : 'Not connected'}</small>`;
 }
 const isManual = () => !!(ST && /^manual/i.test(String(ST.source || '')));
@@ -561,12 +597,13 @@ function needData() { return !ST ? `<div class="card empty">${connected() ? 'Loa
 function render() {
   header(); renderNet();
   const app = $('#app');
-  const top = banners(); lastTop = top;
-  if (view === 'quote') { app.innerHTML = top + quoteHTML(); bindQuote(); }
-  else if (view === 'buy') { app.innerHTML = top + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
-  else if (view === 'stock') app.innerHTML = top + (needData() || stockHTML());
-  else if (view === 'sales') app.innerHTML = top + (needData() || salesHTML());
-  else if (view === 'dash') app.innerHTML = top + (needData() || dashHTML());
+  const top = banners(); lastTop = top; const bar = tabBarHTML();
+  if (view === 'quote') { app.innerHTML = top + bar + quoteHTML(); bindQuote(); }
+  else if (view === 'buy') { app.innerHTML = top + bar + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
+  else if (view === 'stock') app.innerHTML = top + bar + (needData() || stockHTML());
+  else if (view === 'sales') app.innerHTML = top + bar + (needData() || salesHTML());
+  else if (view === 'dash') app.innerHTML = top + bar + (needData() || dashHTML());
+  applyTabMask();
 }
 
 // Quote
@@ -585,7 +622,7 @@ function quoteHTML() {
     <button class="btn ${B ? 'gold' : 'sec'}" id="qadd">＋ Add to batch quote</button>
   </div>
   <div class="card ${B ? 'bqmain' : 'bqsec'}" id="bqCard">${bqHTML()}</div></div>
-  ${s ? `<div class="fine" id="qBaseLine">${esc(baseLineHTML())}</div>` : ''}`;
+  ${s ? `<div class="fine" id="qBaseLine">${hv(esc(baseLineHTML()))}</div>` : ''}`;
 }
 function qOutHTML(v) {
   const p = toPurity(v);
@@ -594,18 +631,18 @@ function qOutHTML(v) {
   if (isNaN(p)) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price" style="font-size:22px">Enter a purity like 87.1 or 0.871</div></div>`;
   const q = quoteFor(p);
   // Batch mode: one compact live line, so the batch list stays the main thing on screen.
-  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${pct(p)} → <b id="qPrice">${peso(q.perBhy)}</b> / BHY${offTxt()}</div>`;
-  return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
-    <div class="price" id="qPrice">${peso(q.perBhy)}</div>
-    <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
-    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}
+  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${HP(p)} → <b id="qPrice">${H(q.perBhy)}</b> / BHY${offTxt()}</div>`;
+  return `<div class="quote"><div class="lbl">Buy price per BHY · ${HP(p)}</div>
+    <div class="price" id="qPrice">${H(q.perBhy)}</div>
+    <div class="fine" id="qFine">Reference per BHY <b id="qRef">${H(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
+    <div class="subs one"><div><small>Per gram</small><b id="qGram">${H(q.perGram)}</b></div></div>${offTxt()}
     <button type="button" class="btn buythis" id="qbuy" onclick="buyFrom(${p})">🛒 Buy this</button></div>`;
 }
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(when(lastSync))}</div>` : '';
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
-  const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
-    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
+  const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${HP(p)}</span>
+    <span class="v">${q ? H(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
   return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}${QMODE === 'batch' ? `<button type="button" class="btn bball" id="bqBuyAll" onclick="buyAll()">🛒 Buy all ${BQ.length} item${BQ.length === 1 ? '' : 's'}</button>` : ''}`;
 }
 // Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
@@ -711,9 +748,9 @@ function buyHint() {
   const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;   // same deduction as the Quote tab
   const n = $('#pnote'); if (n) n.classList.toggle('hidden', !(qPre && $('#bp').value === qPre));
   const ch = $('#chint'), amt = quoteAmount();
-  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : amt.toFixed(2); }
+  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${H(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : amt.toFixed(2); }
   if (!q) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="calc">Quote at ${pct(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
+  el.innerHTML = `<div class="calc">Quote at ${HP(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${H(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${HW(w)} BHY: <b>${H(q.perBhy * w)}</b>` : ''}</div>`;
 }
 function bindBuy() {
   if (!$('#bsave')) return;
@@ -791,7 +828,7 @@ function bbRowHTML(r, i) {
       <div><label for="bbw${i}">Weight (BHY)</label><input id="bbw${i}" data-f="w" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.weightBhy)}" placeholder="0.00"></div>
       <div><label for="bbp${i}">Purity %</label><input id="bbp${i}" data-f="p" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.purity)}" placeholder="85.35"></div></div>
       <div><label for="bbc${i}">Cost (₱)</label><input id="bbc${i}" data-f="c" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.cost)}" placeholder="0.00">
-      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : amt.toFixed(2)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
+      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : amt.toFixed(2)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${H(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
     ${r.err ? `<div class="bberr">${esc(r.err)}</div>` : ''}</div>`;
 }
 function bbHTML() {
@@ -809,7 +846,7 @@ function bbTotals() {
   const el = $('#bbTot'); if (!el) return;
   const bhy = (S() || {}).bhyPerGram || 2; let n = 0, w = 0, c = 0, miss = 0;
   BB.rows.forEach(r => { if (bbBlank(r)) return; n++; const x = parseNum(r.weightBhy), y = parseNum(r.cost); if (x > 0) w += x; if (y >= 0 && y !== null) c += y; else miss++; });
-  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${g3(w / bhy)} g</b> <small style="color:#d8d1bd">(${wt(w)} BHY)</small></span><span>Cost <b id="bbC">${peso(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
+  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${HG3(w / bhy)} g</b> <small style="color:#d8d1bd">(${HW(w)} BHY)</small></span><span>Cost <b id="bbC">${H(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
   const sb = $('#bbSaveAll'); if (sb) sb.textContent = n ? `Save all ${n} purchase${n === 1 ? '' : 's'}` : 'Save all';
   const ct = $('#bbCount'); if (ct) ct.textContent = BB.rows.length + ' row' + (BB.rows.length === 1 ? '' : 's');
 }
@@ -817,7 +854,7 @@ function bbRowUpdate(i) {   // hint + totals only: never re-draws the box being 
   const r = BB.rows[i], row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!r || !row) return;
   const ch = row.querySelector('.chint'), amt = bbAmt(r);
   ch.classList.toggle('hidden', amt == null); ch.dataset.amt = amt == null ? '' : amt.toFixed(2);
-  ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
+  ch.innerHTML = amt == null ? '' : `Quote: <b>${H(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
   bbTotals();
 }
 function bbUseHint(i) { const row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!row) return; const v = row.querySelector('.chint').dataset.amt; if (!v) return;
@@ -918,8 +955,8 @@ document.addEventListener('focusout', e => {
 
 // Stock
 function itemRowHTML(it) {
-  return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
-    <span class="muted">Cost ${peso(it.cost)} · Profit <b>${prof(it.projProfit)}</b></span></div>
+  return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${HW(it.weightBhy)} BHY</b> · ${HP(it.purity)}<br>
+    <span class="muted">Cost ${H(it.cost)} · Profit <b>${prof(it.projProfit)}</b></span></div>
     <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
 }
 // Projected profit of an unsynced purchase from the cached base (same rule as the sheet: base × purity × grams).
@@ -931,8 +968,8 @@ function qBadge(it) {
 }
 function qRowHTML(it) {
   const busyNow = inflight === it.rid;
-  return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no" aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)} ${qBadge(it)}<br>
-    <span class="muted">Cost ${peso(it.cost)} · ${esc(fmtDate(it.date))}${!it.error && !it.hold ? ` · Profit <b>${prof(qProfit(it))}</b>` : ''}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
+  return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no" aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span><div class="body"><b>${HW(it.weightBhy)} BHY</b> · ${HP(it.purity)} ${qBadge(it)}<br>
+    <span class="muted">Cost ${H(it.cost)} · ${esc(fmtDate(it.date))}${!it.error && !it.hold ? ` · Profit <b>${prof(qProfit(it))}</b>` : ''}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
     ${it.error ? `<span class="qerr">Sheet said: ${esc(it.error)}</span>` : ''}${it.hold ? `<span class="qhold">${esc(it.hold)}</span>` : ''}</div>
     <div class="acts">${it.error ? `<button class="ed" aria-label="Retry" title="Retry" onclick="qRetry('${esc(it.rid)}')">↻</button>` : ''}${it.hold ? `<button class="ed" aria-label="Send anyway" title="Send anyway" onclick="qRetry('${esc(it.rid)}',true)">⤴</button>` : ''}<button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button><button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></div></div>`;
 }
@@ -956,14 +993,14 @@ function stockHTML() {
   const tp = L.reduce((t, x) => t + (x.projProfit || 0), 0) + P.reduce((t, x) => t + (qProfit(x) || 0), 0);
   const tw = L.reduce((t, x) => t + (x.weightBhy || 0), 0) + P.reduce((t, x) => t + (x.weightBhy || 0), 0);
   const pend = P.map(it => { const s = S(), sell = s && s.base ? s.base * it.purity * it.weightBhy / (s.bhyPerGram || 2) : null;
-    return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(sell)}</td><td><b>${prof(qProfit(it))}</b></td>
+    return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(sell)}</td><td><b>${prof(qProfit(it))}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button> <button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></td></tr>`; }).join('');
   const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
-    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit)}</b></td>
+    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(it.projSell)}</td><td><b>${prof(it.projProfit)}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}${pend}
-    <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td><b>${prof(tp)}</b></td><td></td></tr></tbody></table>`;
+    <tr class="tot"><td>Total</td><td>${HW(tw)}</td><td></td><td>${H(tc)}</td><td></td><td><b>${prof(tp)}</b></td><td></td></tr></tbody></table>`;
   return queueHTML() + refineBtnHTML(L.length) + `
-    <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${L.length} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn()}</h2>
+    <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${hv(L.length)} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn()}</h2>
     ${table}<div class="mobile-only">${L.map(itemRowHTML).join('')}${P.map(qRowHTML).join('')}</div></div>`;
 }
 function stockItem(no) { return (ST.stock || []).find(x => Number(x.no) === Number(no)); }
@@ -999,15 +1036,15 @@ async function openRefine() {
   if (!p.count) return toast('No items in stock');
   modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${p.count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>
     <div class="sumlist">
-      <div><span>Items</span><b>${p.count}</b></div>
-      <div><span>Raw grams</span><b>${g3(p.rawG)} g</b></div>
-      <div><span>Refined grams (est.)</span><b>${g3(p.refinedG)} g</b></div>
-      <div><span>Cost of items</span><b>${peso(p.cost)}</b></div>
-      <div><span>Refining fee</span><b>${peso(p.fee)}</b></div>
-      <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
-      <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
+      <div><span>Items</span><b>${hv(p.count)}</b></div>
+      <div><span>Raw grams</span><b>${HG3(p.rawG)} g</b></div>
+      <div><span>Refined grams (est.)</span><b>${HG3(p.refinedG)} g</b></div>
+      <div><span>Cost of items</span><b>${H(p.cost)}</b></div>
+      <div><span>Refining fee</span><b>${H(p.fee)}</b></div>
+      <div><span>Cost incl. fee</span><b>${H(p.costInclFee)}</b></div>
+      <div><span>Base frozen for this batch</span><b>${H(p.base)} / g</b></div>
       <div class="big"><span>Est. profit ${eyeBtn()}</span><b>${prof(p.estProfit)}</b></div>
-      <div><span>Silver needed</span><b>${g3(p.silverG)} g</b></div>
+      <div><span>Silver needed</span><b>${HG3(p.silverG)} g</b></div>
     </div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
     <button class="btn gold" id="rgo">Refine ${p.count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
@@ -1022,22 +1059,22 @@ async function openRefine() {
 function salesHTML() {
   const B = ST.batches || [];
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
-    <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
-    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${g3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div>
-    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${g2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
-    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit)}</b></div>`
-      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit)}</b></div>`}</div>
+    <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${hv(esc(b.items ?? '–'))}</b></div>
+    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${HG3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${HG3(b.refinedG)} g</b></div>
+    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${HG2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${H(b.base)}</b></div>
+    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${H(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit)}</b></div>`
+      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${H(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit)}</b></div>`}</div>
     <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" onclick="openSale('${esc(b.id)}')">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
     : '<div class="empty">No refining batches yet. Use Batch refine on the Stock screen.</div>';
   const L = ST.sales || [];
-  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${peso(s.actual)}</span></div><b>${prof(s.profit)}</b></div>`).join('')
+  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${H(s.actual)}</span></div><b>${prof(s.profit)}</b></div>`).join('')
     : '<div class="empty">No sales recorded yet.</div>';
   return `<div class="two"><div class="card"><h2>Refining batches ${eyeBtn()}</h2>${batches}</div>
     <div class="card"><h2><span>Recent sales <span class="muted">profit</span></span>${eyeBtn()}</h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
 }
 function openSale(id) {
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
-  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${g3(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}</div>
+  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${HG3(b.refinedG)} g refined (est.) · cost incl. fee ${H(b.costInclFee)}</div>
     <label for="sd">Sell date</label><input id="sd" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(b.sellDate) ? b.sellDate : todayISO())}">
     <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(b.sellBase ?? (ST.base || ''))}">
     <label for="sa">Actual amount received (₱) <span class="hint">optional, overrides grams × base</span></label><input id="sa" type="text" inputmode="decimal" value="${esc(b.actualAmt ?? '')}">
@@ -1045,7 +1082,7 @@ function openSale(id) {
     <button class="btn green" id="sgo">${b.recorded ? 'Save correction' : 'Record sale'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const calc = () => { const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
     const val = amt != null && !isNaN(amt) ? amt : (base > 0 ? b.refinedG * base : null);
-    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${peso(val)} · profit <b>${prof(val - b.costInclFee)}</b></span>${eyeBtn()}</div>` : ''; };
+    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${H(val)} · profit <b>${prof(val - b.costInclFee)}</b></span>${eyeBtn()}</div>` : ''; };
   ['sb', 'sa'].forEach(k => $('#' + k).addEventListener('input', calc)); calc();
   $('#sgo').onclick = async () => {
     const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
@@ -1089,13 +1126,13 @@ function stockBoxesHTML() {
   return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn()}</h3>
       <div class="figs">
-        <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${g3(A.g)} g</b></div>
-        <div><span>Cost</span><b id="sCost">${peso(A.c)}</b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue">${peso(A.v)}</b></div>
+        <div><span>Items</span><b id="sCount">${hv(A.n)}</b></div><div><span>Grams</span><b id="sGrams">${HG3(A.g)} g</b></div>
+        <div><span>Cost</span><b id="sCost">${H(A.c)}</b></div><div><span>Est. value at ${H(ST.base)} / g</span><b id="sValue">${H(A.v)}</b></div>
       </div>
       <div class="profrow"><span>Est. profit</span><b id="sProfit">${prof(A.p)}</b></div>${loc(A)}</div>
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
-      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${g3(T.g)} g</b></div>
-      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div></div>`;
+      <div><span>Items</span><b id="tCount">${hv(T.n)}</b></div><div><span>Grams</span><b id="tGrams">${HG3(T.g)} g</b></div>
+      <div><span>Cost</span><b id="tCost">${H(T.c)}</b></div></div>${loc(T)}</div></div>`;
 }
 
 // Dashboard (v10): stock first; this month's profit and the all-time totals folded into one dropdown.
@@ -1104,7 +1141,7 @@ function dashHTML() {
   const d = ST.dashboard || {}, m = ST.month;
   const month = m ? `<div class="month" id="monthCard"><div class="lbl" id="mName">${esc(m.name)} profit</div>
       <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit)}</span>${eyeBtn()}</div>
-      <div class="sec">Purchases this month <b id="mCost">${peso(m.purchasesCost)}</b></div></div>`
+      <div class="sec">Purchases this month <b id="mCost">${H(m.purchasesCost)}</b></div></div>`
     : `<div class="month" id="monthCard"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
   return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>Profit &amp; totals</summary><div class="inner">
     ${month}
@@ -1113,8 +1150,8 @@ function dashHTML() {
     <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized)}</div></div>
     <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit)}</div>
       ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit)} est.</div>` : ''}</div>
-    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${peso(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
-    <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${peso(d.cashUsed)}</div></div>
+    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${H(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
+    <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${H(d.cashUsed)}</div></div>
   </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(when(lastSync))}</div>`;
 }
 
@@ -1124,7 +1161,7 @@ function openBase() {
   if (!ST || !ST.base) return toast('Loading from the sheet…');
   modal(`<h2>Set base price</h2><div class="muted">Today's buying base per gram, after the ₱200 adjustment. It replaces the sheet's base until the next automatic update.</div>
     <label for="bb">Base price (₱ / g)</label><input id="bb" class="basein" type="text" inputmode="decimal" autocomplete="off" value="${esc(Number(ST.base).toFixed(2))}">
-    <div class="muted" style="margin-top:6px">Now ${peso(ST.base)} / g · ${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div>
+    <div class="muted" style="margin-top:6px">Now ${H(ST.base)} / g · ${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div>
     <button class="btn gold" id="bbsave">Save</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const el = $('#bb'); el.focus(); el.select();
   el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveBase(); } });
@@ -1147,7 +1184,7 @@ function openSettings() {
     <label for="cu">Web app URL</label><input id="cu" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(CFG.url)}">
     <label for="ct">Token</label><input id="ct" type="password" autocomplete="off" value="${esc(CFG.token)}">
     <button class="btn gold" id="csave">Save &amp; test</button>
-    ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${peso(ST.base)} / g)</span></button>` : ''}
+    ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${H(ST.base)} / g)</span></button>` : ''}
     ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
     <button class="btn light" onclick="closeModal()">Close</button>
     <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(when(lastSync)) : ''}</div>`);
