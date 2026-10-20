@@ -113,6 +113,7 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .stk .figs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 10px}
 .stk .figs div{background:#fff;border-radius:10px;padding:8px 10px;min-width:0}
 .stk .figs span{display:block;font-size:13px;color:var(--muted);font-weight:700}
+.stk .figs b > .fv{display:inline;font-size:inherit;color:inherit;font-weight:inherit}   /* v20: the number inside the figure (label spans above) */
 .stk .figs b{display:block;font-size:22px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stk .profrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border-radius:10px;padding:8px 10px}
 .stk .profrow span{font-size:14px;color:var(--muted);font-weight:700}
@@ -253,6 +254,21 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
   .mobile-only{display:none!important}
 }
 @media (max-width:899px){.desk-only{display:none!important}}
+/* v20, PHONE ONLY (below 900 px, the app's mobile/desktop breakpoint; the PC Dashboard is as in v19):
+   money / grams always fit (up to ₱12,345,678.90 or −₱12,345,678.90 at 320 px). Each number keeps its normal big
+   size; only when it would not fit its box does fitNums() step it down (never cut, never wrapped, no ellipsis,
+   min 12 px). Digits are tabular. */
+@media (max-width:899px){
+  .stkwrap,.tiles{grid-template-columns:minmax(0,1fr)}   /* a long number never widens the column */
+  .stk .figs{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
+  .stk .figs b{overflow:visible;text-overflow:clip}
+  .stk .profrow b{flex:1 1 auto;text-align:right}
+  .tile .val,.month .val{word-break:normal}
+  .month .val{flex:1 1 auto}
+  .fit{min-width:0;display:block}
+  .fit > .fv, .fit > .pv, .stk .figs b.fit > .fv{display:block;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .month .sec b,.tile .muted .pv{white-space:nowrap;font-variant-numeric:tabular-nums}
+}
 </style>
 </head>
 <body>
@@ -275,7 +291,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -341,7 +357,25 @@ function applyEye() {
   document.querySelectorAll('.eye').forEach(b => { const on = gShown(b.dataset.g); b.setAttribute('aria-pressed', String(on)); const l = eyeLbl(on); b.setAttribute('aria-label', l); b.title = l; b.innerHTML = on ? EYE_OPEN : EYE_OFF; });
   const b = $('#tabEye'); if (b) { const st = tabState(view), t = tabCtl(st);
     b.dataset.state = st; b.setAttribute('aria-pressed', String(st === 'hidden')); b.setAttribute('aria-label', t.aria); b.title = t.aria; b.innerHTML = t.html; }
+  if (view === 'dash') fitNums();
 }
+// v20, phone only (< 900 px): shrink a Dashboard number only when it does not fit its box. Runs after every draw
+// and on resize / rotation; on a PC-width screen the v19 sizes stay (inline sizes are cleared).
+const MOBILE_MQ = '(max-width:899px)';   // same breakpoint as .desk-only / .mobile-only ("Last added" on Buy)
+function fitNums() {
+  const phone = matchMedia(MOBILE_MQ).matches;
+  document.querySelectorAll('#app .fit').forEach(c => {
+    const el = c.firstElementChild && c.firstElementChild.matches('.fv, .pv') ? c.firstElementChild : null;
+    if (!el) return; el.style.fontSize = ''; if (!phone || !el.offsetParent) return;
+    for (let i = 0; i < 4 && el.scrollWidth > el.clientWidth; i++) {
+      const fs = parseFloat(getComputedStyle(el).fontSize);
+      el.style.fontSize = Math.max(12, Math.floor(fs * el.clientWidth / el.scrollWidth * 0.98 * 10) / 10) + 'px';
+      if (fs <= 12) break;
+    }
+  });
+}
+let fitT = 0;
+window.addEventListener('resize', () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(fitNums); });
 function toggleTab(e) {   // main toggle: flip its own state, every eye on the tab follows. Never re-draws the page.
   if (e) { e.preventDefault(); e.stopPropagation(); }
   const t = view; if (!TABS.includes(t)) return;
@@ -349,8 +383,8 @@ function toggleTab(e) {   // main toggle: flip its own state, every eye on the t
 }
 const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
 const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
-const g3 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-const g2 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Grams on screen (v20): always 2 decimals, e.g. 1,234.57. Display only: sums and everything sent to the sheet keep full precision.
+const grams = w => round2(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const hasNum = v => v !== null && v !== undefined && v !== '' && isFinite(Number(v));
 // Dates are Manila dates, whatever time zone the phone is set to.
 const todayISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -890,7 +924,7 @@ function bbTotals() {
   const el = $('#bbTot'); if (!el) return;
   const bhy = (S() || {}).bhyPerGram || 2; let n = 0, w = 0, c = 0, miss = 0;
   BB.rows.forEach(r => { if (bbBlank(r)) return; n++; const x = parseNum(r.weightBhy), y = parseNum(r.cost); if (x > 0) w += x; if (y >= 0 && y !== null) c += y; else miss++; });
-  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${g3(w / bhy)} g</b> <small style="color:#d8d1bd">(${wt(w)} BHY)</small></span><span>Cost <b id="bbC">${peso(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
+  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${grams(w / bhy)} g</b> <small style="color:#d8d1bd">(${wt(w)} BHY)</small></span><span>Cost <b id="bbC">${peso(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
   const sb = $('#bbSaveAll'); if (sb) sb.textContent = n ? `Save all ${n} purchase${n === 1 ? '' : 's'}` : 'Save all';
   const ct = $('#bbCount'); if (ct) ct.textContent = BB.rows.length + ' row' + (BB.rows.length === 1 ? '' : 's');
 }
@@ -1083,14 +1117,14 @@ async function openRefine() {
   modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${p.count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>
     <div class="sumlist">
       <div><span>Items</span><b>${p.count}</b></div>
-      <div><span>Raw grams</span><b>${g3(p.rawG)} g</b></div>
-      <div><span>Refined grams (est.)</span><b>${g3(p.refinedG)} g</b></div>
+      <div><span>Raw grams</span><b>${grams(p.rawG)} g</b></div>
+      <div><span>Refined grams (est.)</span><b>${grams(p.refinedG)} g</b></div>
       <div><span>Cost of items</span><b>${peso(p.cost)}</b></div>
       <div><span>Refining fee</span><b>${peso(p.fee)}</b></div>
       <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
       <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
       <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(p.estProfit, 'stock:refine')}</b></div>
-      <div><span>Silver needed${p.silverExcl ? ` <small class="muted rnx">excl. ${p.silverExcl} item${p.silverExcl === 1 ? '' : 's'} ≥ ${fullPctTxt(p.fullMin)}</small>` : ''}</span><b>${g3(p.silverG)} g</b></div>
+      <div><span>Silver needed${p.silverExcl ? ` <small class="muted rnx">excl. ${p.silverExcl} item${p.silverExcl === 1 ? '' : 's'} ≥ ${fullPctTxt(p.fullMin)}</small>` : ''}</span><b>${grams(p.silverG)} g</b></div>
     </div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
     <button class="btn gold" id="rgo">Refine ${p.count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
@@ -1108,7 +1142,6 @@ async function openRefine() {
 //            v19: over the items BELOW 99.8% only (99.8%+ is already refined); they still count in everything else;
 //   sale value = refined g × base (= base × purity × grams, as everywhere in the app); profit = value − cost − fee.
 // Never writes to the sheet. The base typed here is remembered on this device (RN_KEY); none typed = today's base.
-const rnd = (x, d) => Math.round(x * Math.pow(10, d)) / Math.pow(10, d);   // = goldApiR_
 function rnTotals() {
   const s = S() || {}, bhy = s.bhyPerGram || 2;
   const L = (ST && ST.stock || []).map(x => ({ g: hasNum(x.weightBhy) ? Number(x.weightBhy) / bhy : Number(x.grams) || 0, p: Number(x.purity) || 0, c: Number(x.cost) || 0, local: false }))
@@ -1124,9 +1157,9 @@ const rnStored = () => { const v = load(RN_KEY); return typeof v === 'string' &&
 const rnToday = () => hasNum(ST && ST.base) ? Number(ST.base).toFixed(2) : '';
 function rnFigsHTML(t) {
   return `<div><span>Items</span><b>${t.n}</b></div>
-      <div><span>Raw weight</span><b>${g3(rnd(t.raw, 3))} g</b></div>
-      <div id="rnSilver"><span>Silver needed${t.high ? ` <small class="muted rnx">excl. ${t.high} item${t.high === 1 ? '' : 's'} ≥ ${fullPctTxt()}</small>` : ''}</span><b>${g3(rnd(t.silver, 3))} g</b></div>
-      <div><span>Refined grams (est.)</span><b>${g3(rnd(t.ref, 3))} g</b></div>
+      <div><span>Raw weight</span><b>${grams(t.raw)} g</b></div>
+      <div id="rnSilver"><span>Silver needed${t.high ? ` <small class="muted rnx">excl. ${t.high} item${t.high === 1 ? '' : 's'} ≥ ${fullPctTxt()}</small>` : ''}</span><b>${grams(t.silver)} g</b></div>
+      <div><span>Refined grams (est.)</span><b>${grams(t.ref)} g</b></div>
       <div><span>Cost of items</span><b>${peso(t.cost)}</b></div>
       <div><span>Refining fee</span><b>${peso(t.fee)}</b></div>
       <div><span>Cost incl. fee</span><b>${peso(t.cost + t.fee)}</b></div>`;
@@ -1170,8 +1203,8 @@ function salesRestHTML() {
   const B = ST.batches || [];
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
     <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
-    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${g3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div>
-    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${g2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
+    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${grams(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${grams(b.refinedG)} g</b></div>
+    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${grams(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
     ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit, 'sales:batches')}</b></div>`
       : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit, 'sales:batches')}</b></div>`}</div>
     <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" data-id="${esc(b.id)}" onclick="openSale(this.dataset.id)">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
@@ -1184,7 +1217,7 @@ function salesRestHTML() {
 }
 function openSale(id) {
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
-  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${g3(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}</div>
+  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${grams(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}</div>
     <label for="sd">Sell date</label><input id="sd" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(b.sellDate) ? b.sellDate : todayISO())}">
     <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(b.sellBase ?? (ST.base || ''))}">
     <label for="sa">Actual amount received (₱) <span class="hint">optional, overrides grams × base</span></label><input id="sa" type="text" inputmode="decimal" value="${esc(b.actualAmt ?? '')}">
@@ -1236,12 +1269,12 @@ function stockBoxesHTML() {
   return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
-        <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${g3(A.g)} g</b></div>
-        <div><span>Cost</span><b id="sCost">${peso(A.c)}</b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue">${peso(A.v)}</b></div>
+        <div><span>Items</span><b id="sCount" class="fit"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit"><span class="fv">${grams(A.g)} g</span></b></div>
+        <div><span>Cost</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
       </div>
-      <div class="profrow"><span>Est. profit</span><b id="sProfit">${prof(A.p, 'dash:stock')}</b></div>${loc(A)}</div>
+      <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>${loc(A)}</div>
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
-      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${g3(T.g)} g</b></div>
+      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${grams(T.g)} g</b></div>
       <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div></div>`;
 }
 
@@ -1250,18 +1283,18 @@ let dashOpen = false;
 function dashHTML() {
   const d = ST.dashboard || {}, m = ST.month;
   const month = m ? `<div class="month" id="monthCard"><div class="lbl" id="mName">${esc(m.name)} profit</div>
-      <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit, 'dash:month')}</span>${eyeBtn('dash:month')}</div>
+      <div class="big"><span class="val fit" id="mProfit">${prof(m.realizedProfit, 'dash:month')}</span>${eyeBtn('dash:month')}</div>
       <div class="sec">Purchases this month <b id="mCost">${peso(m.purchasesCost)}</b></div></div>`
     : `<div class="month" id="monthCard"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
-  return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>Profit &amp; totals</summary><div class="inner">
+  return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open; fitNums()"><summary>Profit &amp; totals</summary><div class="inner">
     ${month}
     <div class="eyerow"><span class="muted">All-time totals</span>${eyeBtn('dash:all')}</div>
     <div class="tiles">
-    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
-    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit, 'dash:all')}</div>
+    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val fit" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
+    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val fit" id="dRef">${prof(d.estRefiningProfit, 'dash:all')}</div>
       ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit, 'dash:all')} est.</div>` : ''}</div>
-    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${peso(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
-    <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${peso(d.cashUsed)}</div></div>
+    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val fit" id="dBase"><span class="fv">${peso(ST.base)}</span></div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
+    <div class="tile ink"><div class="lbl">Cash used</div><div class="val fit" id="dCash"><span class="fv">${peso(d.cashUsed)}</span></div></div>
   </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(whenTxt(lastSync))}</div>`;
 }
 
