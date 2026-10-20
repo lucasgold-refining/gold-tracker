@@ -195,11 +195,10 @@ details.all[open]>summary::after{transform:rotate(180deg)}
 details.all .inner{padding:0 16px 16px}
 .eyerow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
 input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
-.kbd{font-size:12px;color:var(--muted);margin-top:6px;text-align:center}
 .calc{margin-top:8px;background:var(--goldbg);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;font-size:16px}
 .calc b{font-size:18px}
 .side-brand{display:none}
-/* v16: per-tab profit toggle (Stock, Refining, Dashboard). Shows the current state: icon + "Profit visible" / "Profit hidden". */
+/* Per-tab profit toggle (Stock, Refining, Dashboard). Label = its own state: "Hidden" / "Shown" + "Tap to show all" / "Tap to hide all". */
 .tabbar{display:flex;justify-content:flex-end;margin:0 0 10px}
 .teye{border:2px solid var(--ink);background:#fff;color:var(--ink);border-radius:12px;min-width:46px;min-height:50px;padding:4px 14px 4px 10px;display:inline-flex;align-items:center;gap:9px;font:inherit;cursor:pointer;flex:none;text-align:left}
 .teye svg{width:24px;height:24px;flex:none}
@@ -271,7 +270,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -280,16 +279,19 @@ const SYNC_EVERY_MS = 60000;
 const dedupeSafeMs = () => (ST && Number(ST.version) >= 2) ? 5.5 * 3600e3 : 9 * 60000;
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const num = n => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const peso = n => (n == null || isNaN(n)) ? '–' : (Number(n) < 0 ? '−₱' : '₱') + num(Math.abs(Number(n)));
-const sgn = n => n == null ? '' : (Number(n) < 0 ? 'neg' : 'pos');
+// Money: rounded to the cent in decimal (1.005 -> 1.01, never "−₱0.00"), shown as #,##0.00.
+const round2 = n => { n = Number(n); const a = Math.abs(n), r = Number(Math.round(a + 'e2') + 'e-2'), v = Math.sign(n) * (isFinite(r) ? r : Math.round(a * 100) / 100); return v === 0 ? 0 : v; };   // half away from zero
+const num = n => round2(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const peso = n => { if (n == null || n === '' || isNaN(n)) return '–'; const v = round2(n); return (v < 0 ? '−₱' : '₱') + num(Math.abs(v)); };
+const sgn = n => n == null ? '' : (round2(n) < 0 ? 'neg' : 'pos');
 // ---------- profit privacy, per tab (v16) ----------
 // Every profit eye controls its own group of profit figures ("tab:group"). Tabs with profit: Stock, Refining, Dashboard.
 // Each of those tabs has a main toggle at the top with its OWN state, "Hidden" or "Shown" (its label). Tapping it flips that
 // state and forces every profit figure (every eye) on the tab to match. Flipping a single eye changes only that eye's figures;
 // the main toggle's state and label stay as they are. Main + eye states are saved per tab on this device (default: all
 // hidden) and restored on every re-render and reload, so the app opens as it was left.
-// Buy has no profit of its own: its desktop "Last added" list is stock and follows the Stock list eye. Quote shows no profit.
+// Buy (v17): its profit (desktop "Last added" list) is ALWAYS shown, has no eye and no toggle, and no other tab affects it.
+// Quote shows no profit.
 const MASK = '₱ ••••••';
 const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
@@ -302,10 +304,9 @@ const readTM = () => { const v = load(TM_KEY); const o = {};
   if (v && JSON.stringify(v) !== JSON.stringify(o)) save(TM_KEY, o);
   return o; };
 let TM = readTM();
-const profTab = v => { v = v || view; return v === 'buy' ? 'stock' : v; };
-const gShown = g => { const [t, k] = String(g).split(':'); return !!(TM[t] && TM[t][k] === 0); };
+const ALWAYS_SHOWN = 'buy:last';   // profit group that is never masked
+const gShown = g => { if (g === ALWAYS_SHOWN) return true; const [t, k] = String(g).split(':'); return !!(TM[t] && TM[t][k] === 0); };
 function setG(g, on) { const [t, k] = g.split(':'); if (!GROUPS[t] || !GROUPS[t].includes(k)) return; TM[t] = TM[t] || {}; TM[t][k] = on ? 0 : 1; }
-const hv = s => s, H = n => peso(n), HW = w => wt(w), HP = x => pct(x), HG3 = w => g3(w), HG2 = w => g2(w);   // v15 money/quantity masking removed: only profit is masked
 // A profit figure of group g. data-v keeps the number and data-g the group, so the eyes can flip it in place.
 const prof = (n, g) => { const has = n != null && !isNaN(n), on = gShown(g);
   return `<span class="pv${on || !has ? ' ' + sgn(has ? n : null) : ' masked'}" data-g="${g}" data-v="${has ? Number(n) : ''}">${on || !has ? peso(n) : MASK}</span>`; };
@@ -318,28 +319,26 @@ function toggleEye(e) {   // one eye: only its own figures change
   setG(g, !gShown(g)); save(TM_KEY, TM); applyEye();
 }
 // The main toggle's own state for tab t: 'shown' or 'hidden' (default hidden). Eyes never change it.
-const tabState = t => { t = t || profTab(); return GROUPS[t] && TM[t] && TM[t].m === 0 ? 'shown' : 'hidden'; };
+const tabState = t => { t = t || view; return GROUPS[t] && TM[t] && TM[t].m === 0 ? 'shown' : 'hidden'; };
 function tabCtl(st) {
   const on = st === 'shown', a = on ? 'Shown. Tap to hide all profit on this tab' : 'Hidden. Tap to show all profit on this tab';
   return { aria: a, html: `${on ? EYE_OPEN : EYE_OFF}<span class="tbtxt"><span class="tblbl" id="tabLbl">${on ? 'Shown' : 'Hidden'}</span><small class="tact">${on ? 'Tap to hide all' : 'Tap to show all'}</small></span>` };
 }
 function tabBarHTML() {   // filled in by applyEye() right after the page is drawn
   if (!TABS.includes(view)) return '';
-  return `<div class="tabbar" id="tabBar"><button type="button" class="teye" id="tabEye" data-tab="${view}" onmousedown="event.preventDefault()" onclick="toggleTab(event)"></button></div>`;
+  return `<div class="tabbar" id="tabBar"><button type="button" class="teye" id="tabEye" onmousedown="event.preventDefault()" onclick="toggleTab(event)"></button></div>`;
 }
 // Figures, eyes and the main toggle, all from the saved states. Called after every render / soft re-render / pop-up.
 function applyEye() {
-  document.body.dataset.tab = view;
   document.querySelectorAll('.pv').forEach(el => { const v = el.dataset.v; if (v === '' || !el.dataset.g) return; const n = Number(v), on = gShown(el.dataset.g);
-    el.textContent = on ? peso(n) : MASK; el.classList.toggle('masked', !on); el.classList.toggle('pos', on && n >= 0); el.classList.toggle('neg', on && n < 0); });
+    el.textContent = on ? peso(n) : MASK; el.classList.toggle('masked', !on); el.classList.toggle('pos', on && round2(n) >= 0); el.classList.toggle('neg', on && round2(n) < 0); });
   document.querySelectorAll('.eye').forEach(b => { const on = gShown(b.dataset.g); b.setAttribute('aria-pressed', String(on)); const l = eyeLbl(on); b.setAttribute('aria-label', l); b.title = l; b.innerHTML = on ? EYE_OPEN : EYE_OFF; });
   const b = $('#tabEye'); if (b) { const st = tabState(view), t = tabCtl(st);
-    b.dataset.tab = view; b.dataset.state = st; b.setAttribute('aria-pressed', String(st === 'hidden')); b.setAttribute('aria-label', t.aria); b.title = t.aria; b.innerHTML = t.html; }
+    b.dataset.state = st; b.setAttribute('aria-pressed', String(st === 'hidden')); b.setAttribute('aria-label', t.aria); b.title = t.aria; b.innerHTML = t.html; }
 }
-const applyTabMask = applyEye;
 function toggleTab(e) {   // main toggle: flip its own state, every eye on the tab follows. Never re-draws the page.
   if (e) { e.preventDefault(); e.stopPropagation(); }
-  const t = profTab(); if (!TABS.includes(t)) return;
+  const t = view; if (!TABS.includes(t)) return;
   const on = tabState(t) !== 'shown'; TM[t] = TM[t] || {}; TM[t].m = on ? 0 : 1; GROUPS[t].forEach(k => setG(t + ':' + k, on)); save(TM_KEY, TM); applyEye();
 }
 const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
@@ -347,13 +346,14 @@ const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, ma
 const g3 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const g2 = w => Number(w || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const hasNum = v => v !== null && v !== undefined && v !== '' && isFinite(Number(v));
-const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
-const fmtDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return iso || ''; return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
+// Dates are Manila dates, whatever time zone the phone is set to.
+const todayISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const fmtDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return esc(iso || '');   /* sheet text: escaped */ return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
-// Sheet answers like "Sale added. Profit ₱1,234.00." follow the tab's profit switch.
-function safeMsg(m) {
+// Sheet answers like "Sale added. Profit ₱1,234.00." follow the Recent sales eye (g); only the add-sale answer carries a profit.
+function safeMsg(m, g) {
   m = String(m == null ? '' : m);
-  if (!gShown(view === 'sales' ? 'sales:sales' : profTab() + ':' + ((GROUPS[profTab()] || [''])[0]))) return m.replace(/(profit\s*:?\s*)[−-]?₱\s?\d[\d,]*(\.\d+)?/gi, '$1' + MASK);
+  if (!gShown(g || 'sales:sales')) return m.replace(/(profit\s*:?\s*)[−-]?₱\s?\d[\d,]*(\.\d+)?/gi, '$1' + MASK);
   return m;
 }
 function toast(msg, ms) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms || 2600); }
@@ -373,7 +373,14 @@ let lastSync = ST && ST._syncedAt ? ST._syncedAt : null, netErr = '', busy = fal
 let netDown = false;                 // last request could not reach the sheet
 const isOffline = () => !navigator.onLine || netDown;
 function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
-function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+// If storage is full, the cached sheet copy (largest, re-downloadable) is dropped to make room; purchases are never lost silently.
+function save(k, v) {
+  const s = JSON.stringify(v);
+  try { localStorage.setItem(k, s); return true; } catch (e) {}
+  if (k !== CACHE_KEY) { try { localStorage.removeItem(CACHE_KEY); localStorage.setItem(k, s); return true; } catch (e) {} }
+  if (k === Q_KEY) setTimeout(() => alert('This phone is out of storage space, so a purchase could not be kept offline. Free some space, then check the Stock tab.'), 0);
+  return false;
+}
 const connected = () => !!(CFG.url && CFG.token);
 const S = () => (ST && ST.settings) || null;
 
@@ -423,7 +430,7 @@ function applyAdded(j, it) {
   let item = j.item && Number(j.item.no) === no ? j.item : null;
   if (!item) { const sell = s.base ? s.base * it.purity * it.weightBhy / bhy : null;
     item = { no, date: it.date, weightBhy: it.weightBhy, grams: it.weightBhy / bhy, purity: it.purity, cost: it.cost,
-      projSell: sell == null ? null : Math.round(sell * 100) / 100, projProfit: sell == null ? null : Math.round((sell - it.cost) * 100) / 100, status: 'In stock' }; }
+      projSell: sell == null ? null : round2(sell), projProfit: sell == null ? null : round2(sell - it.cost), status: 'In stock' }; }
   ST.stock = (ST.stock || []).filter(x => Number(x.no) !== no).concat([item]);
   ST.nextNo = Math.max(Number(ST.nextNo) || 0, no + 1);
   if (j.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.version));
@@ -450,7 +457,7 @@ async function refresh(quiet) {
     const n = pendingQ().length ? await syncQueue({ noRefresh: true }) : 0;
     await api('getState'); if (!quiet && !n) toast('Updated from the sheet');   // keep the "Synced N" toast
   }
-  catch (e) { if (e.net) { netErr = ''; if (!quiet) toast(navigator.onLine ? e.message : "You're offline. Showing what was saved " + when(lastSync) + '.', 4000); } else { netErr = e.message; if (!quiet) toast(e.message, 4000); } }
+  catch (e) { if (e.net) { netErr = ''; if (!quiet) toast(navigator.onLine ? e.message : "You're offline. Showing what was saved " + whenTxt(lastSync) + '.', 4000); } else { netErr = e.message; if (!quiet) toast(e.message, 4000); } }
   finally { busy = false; $('#refreshBtn').classList.remove('spin'); softRender(); }
 }
 async function write(action, data, btn) {
@@ -553,8 +560,8 @@ function renderNet() {
   if (!connected() || (!n && !off && !down)) { el.classList.add('hidden'); return; }
   let t;
   if (syncing && !off) t = `⟳ Syncing ${pendingQ().length || n} purchase${(pendingQ().length || n) === 1 ? '' : 's'}…`;
-  else if (off) t = n ? `📴 Offline. ${n} waiting to sync` : `📴 Offline. Showing data from ${when(lastSync)}`;
-  else if (down) t = n ? `⚠️ Can't reach the sheet. ${n} waiting to sync` : `⚠️ Can't reach the sheet. Showing data from ${when(lastSync)}`;
+  else if (off) t = n ? `📴 Offline. ${n} waiting to sync` : `📴 Offline. Showing data from ${whenTxt(lastSync)}`;
+  else if (down) t = n ? `⚠️ Can't reach the sheet. ${n} waiting to sync` : `⚠️ Can't reach the sheet. Showing data from ${whenTxt(lastSync)}`;
   else t = bad ? `⚠️ ${n} waiting to sync · ${bad} need${bad === 1 ? 's' : ''} attention` : `⏳ ${n} waiting to sync`;
   el.innerHTML = esc(t) + (n ? '<span class="go">View ›</span>' : '');
   el.classList.toggle('sync', !off && !down);
@@ -593,7 +600,7 @@ function setDed(v) {
   document.querySelectorAll('#dedSeg button').forEach(b => b.setAttribute('aria-pressed', String(Math.abs(Number(b.dataset.ded) - v) < 1e-9)));
   const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value);
   const bc = $('#bqCard'); if (bc) bc.innerHTML = bqHTML();
-  const bl = $('#qBaseLine'); if (bl) bl.innerHTML = hv(esc(baseLineHTML()));
+  const bl = $('#qBaseLine'); if (bl) bl.textContent = baseLineHTML();
 }
 
 // ---------- views ----------
@@ -604,17 +611,18 @@ function focusQuote() { const el = $('#qp'); if (el && matchMedia('(min-width:90
 
 function header() {
   const s = S();
-  $('#basePill').innerHTML = s && s.base ? `<b>${H(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span><span class="pen" aria-hidden="true">✏️</span></b><small>${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
+  $('#basePill').innerHTML = s && s.base ? `<b>${peso(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span><span class="pen" aria-hidden="true">✏️</span></b><small>${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
     : `<b>₱—</b><small>${connected() ? 'Loading…' : 'Not connected'}</small>`;
 }
 const isManual = () => !!(ST && /^manual/i.test(String(ST.source || '')));
 const srcTxt = () => isManual() ? 'Manual' : String((ST && ST.source) || '');
 function banners() {
   if (!connected()) return `<div class="banner">This app is not connected to your Gold Tracker sheet yet. <button class="btn sm gold" onclick="openSettings()">Set up</button></div>`;
-  if (netErr) return `<div class="banner err">${esc(netErr)}${ST ? `<br><small>Showing what was saved ${esc(when(lastSync))}. Quotes still work.</small>` : ''} <button class="btn sm light" onclick="refresh()">Try again</button></div>`;
+  if (netErr) return `<div class="banner err">${esc(netErr)}${ST ? `<br><small>Showing what was saved ${esc(whenTxt(lastSync))}. Quotes still work.</small>` : ''} <button class="btn sm light" onclick="refresh()">Try again</button></div>`;
   return '';
 }
-function when(iso) { if (!iso) return 'earlier'; const d = new Date(iso); return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+function whenTxt(iso) { if (!iso) return 'earlier'; const d = new Date(iso); if (isNaN(d)) return 'earlier'; const o = { timeZone: 'Asia/Manila' };
+  return d.toLocaleDateString('en-GB', Object.assign({ day: '2-digit', month: 'short' }, o)) + ' ' + d.toLocaleTimeString('en-GB', Object.assign({ hour: '2-digit', minute: '2-digit' }, o)); }
 function needData() { return !ST ? `<div class="card empty">${connected() ? 'Loading from the sheet…' : 'Connect the app to your sheet to see this.'}</div>` : ''; }
 
 function render() {
@@ -626,7 +634,7 @@ function render() {
   else if (view === 'stock') app.innerHTML = top + bar + (needData() || stockHTML());
   else if (view === 'sales') app.innerHTML = top + bar + (needData() || salesHTML());
   else if (view === 'dash') app.innerHTML = top + bar + (needData() || dashHTML());
-  applyTabMask();
+  applyEye();
 }
 
 // Quote
@@ -645,7 +653,7 @@ function quoteHTML() {
     <button class="btn ${B ? 'gold' : 'sec'}" id="qadd">＋ Add to batch quote</button>
   </div>
   <div class="card ${B ? 'bqmain' : 'bqsec'}" id="bqCard">${bqHTML()}</div></div>
-  ${s ? `<div class="fine" id="qBaseLine">${hv(esc(baseLineHTML()))}</div>` : ''}`;
+  ${s ? `<div class="fine" id="qBaseLine">${esc(baseLineHTML())}</div>` : ''}`;
 }
 function qOutHTML(v) {
   const p = toPurity(v);
@@ -654,18 +662,18 @@ function qOutHTML(v) {
   if (isNaN(p)) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price" style="font-size:22px">Enter a purity like 87.1 or 0.871</div></div>`;
   const q = quoteFor(p);
   // Batch mode: one compact live line, so the batch list stays the main thing on screen.
-  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${HP(p)} → <b id="qPrice">${H(q.perBhy)}</b> / BHY${offTxt()}</div>`;
-  return `<div class="quote"><div class="lbl">Buy price per BHY · ${HP(p)}</div>
-    <div class="price" id="qPrice">${H(q.perBhy)}</div>
-    <div class="fine" id="qFine">Reference per BHY <b id="qRef">${H(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
-    <div class="subs one"><div><small>Per gram</small><b id="qGram">${H(q.perGram)}</b></div></div>${offTxt()}
+  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${pct(p)} → <b id="qPrice">${peso(q.perBhy)}</b> / BHY${offTxt()}</div>`;
+  return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
+    <div class="price" id="qPrice">${peso(q.perBhy)}</div>
+    <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
+    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}
     <button type="button" class="btn buythis" id="qbuy" onclick="buyFrom(${p})">🛒 Buy this</button></div>`;
 }
-const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(when(lastSync))}</div>` : '';
+const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(whenTxt(lastSync))}</div>` : '';
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
-  const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${HP(p)}</span>
-    <span class="v">${q ? H(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
+  const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
+    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
   return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}${QMODE === 'batch' ? `<button type="button" class="btn bball" id="bqBuyAll" onclick="buyAll()">🛒 Buy all ${BQ.length} item${BQ.length === 1 ? '' : 's'}</button>` : ''}`;
 }
 // Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
@@ -696,7 +704,7 @@ function bindQuote() {
   // Batch: Enter adds to the batch list and keeps the box focused + selected for the next purity.
   // Invalid purity: stay here either way.
   el.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return; e.preventDefault(); if (e.repeat) return;
+    if (e.key !== 'Enter') return; e.preventDefault(); if (e.repeat || e.isComposing) return;
     if (QMODE === 'batch') { bqAdd(); return; }
     const p = toPurity(el.value);
     if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); selectAll(el); return; }
@@ -735,7 +743,7 @@ function buyHTML() {
 const nextNoTxt = () => loadQ().length || isOffline() ? 'No. given when synced' : 'next #' + ST.nextNo;
 function lastAddedHTML() {
   const L = (ST.stock || []).slice().sort((a, b) => (b.no || 0) - (a.no || 0)).slice(0, 6);
-  loadQ(); return Q.length || L.length ? Q.slice().reverse().map(qRowHTML).join('') + L.map(itemRowHTML).join('') : '<div class="empty">No items in stock.</div>';
+  loadQ(); return Q.length || L.length ? Q.slice().reverse().map(x => qRowHTML(x, ALWAYS_SHOWN)).join('') + L.map(x => itemRowHTML(x, ALWAYS_SHOWN)).join('') : '<div class="empty">No items in stock.</div>';
 }
 // ---------- Quote -> Buy hand-off (v11) ----------
 // The last quoted purity is remembered for 30 minutes; the Buy tab offers it when the form is empty.
@@ -764,20 +772,20 @@ function clearPre() {
 function quoteAmount() {
   const bp = $('#bp'), bw = $('#bw'); if (!bp || !bw) return null;
   const p = toPurity(bp.value), w = parseNum(bw.value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;
-  return q && w > 0 ? Math.round(q.perBhy * w * 100) / 100 : null;
+  return q && w > 0 ? round2(q.perBhy * w) : null;
 }
 function buyHint() {
   const el = $('#bhint'); if (!el) return;
   const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;   // same deduction as the Quote tab
   const n = $('#pnote'); if (n) n.classList.toggle('hidden', !(qPre && $('#bp').value === qPre));
   const ch = $('#chint'), amt = quoteAmount();
-  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${H(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : amt.toFixed(2); }
+  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : amt.toFixed(2); }
   if (!q) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="calc">Quote at ${HP(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${H(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${HW(w)} BHY: <b>${H(q.perBhy * w)}</b>` : ''}</div>`;
+  el.innerHTML = `<div class="calc">Quote at ${pct(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
 }
 function bindBuy() {
   if (!$('#bsave')) return;
-  ['bw', 'bp', 'bc', 'bd'].forEach(id => $('#' + id).addEventListener('input', () => { buyDraft = { weightBhy: $('#bw').value, purity: $('#bp').value, cost: $('#bc').value, date: $('#bd').value }; buyHint(); }));
+  ['bw', 'bp', 'bc', 'bd'].forEach(id => $('#' + id).addEventListener('input', () => { const d = $('#bd').value; buyDraft = { weightBhy: $('#bw').value, purity: $('#bp').value, cost: $('#bc').value, date: d === todayISO() ? '' : d }; buyHint(); }));
   // Enter chain: Weight -> Purity -> Cost -> save (same as tapping Save). Held Enter (auto-repeat) never saves.
   const next = { bw: 'bp', bp: 'bc' };
   ['bw', 'bp', 'bc'].forEach(id => { $('#' + id).addEventListener('keydown', e => {
@@ -807,7 +815,7 @@ function savePurchase() {
   // The date is fixed now (entry time), so a purchase synced later keeps the day it was bought.
   enqueue({ rid: rid(), date: d, weightBhy: w, purity: p, cost: c, createdAt: new Date().toISOString(), tries: 0 });
   forgetQuote();   // next customer starts fresh
-  buyDraft = { date: d, weightBhy: '', purity: '', cost: '' }; render();
+  buyDraft = { date: d === todayISO() ? '' : d, weightBhy: '', purity: '', cost: '' }; render();   // today = follow the clock
   const el = $('#bw'); if (el) el.focus();
   if (!navigator.onLine) return toast('Saved offline. Will sync when back online', 3500);
   toast(netDown ? 'Saved on this device. Will sync when the sheet answers' : 'Saved ✓, syncing…', 2600);
@@ -826,11 +834,11 @@ const bbHasData = () => BB.rows.some(r => !bbBlank(r));
 function buyAll() {   // Quote tab (Batch): every quoted purity becomes a row, in the same order / numbers
   if (!BQ.length) return toast('Add purities to the batch quote first');
   if (BB.on && bbHasData() && !confirm('Replace the batch purchase you already started?')) return;
-  BB = { on: true, fromQ: true, date: todayISO(), rows: BQ.map(p => bbRow(p)) }; bbSave();
+  BB = { on: true, fromQ: true, date: '', rows: BQ.map(p => bbRow(p)) }; bbSave();   // date '' = today
   go('buy'); bbFocus(0, 'w');
 }
 function bbStart() {  // Buy tab: start a batch without a quote (keeps a batch already in progress)
-  if (!BB.rows.length) BB = { on: true, fromQ: false, date: $('#bd') ? $('#bd').value || todayISO() : todayISO(), rows: [bbRow(), bbRow(), bbRow()] };
+  if (!BB.rows.length) BB = { on: true, fromQ: false, date: buyDraft.date || '', rows: [bbRow(), bbRow(), bbRow()] };
   BB.on = true; bbSave(); render(); window.scrollTo(0, 0); bbFocus(0, 'w');
 }
 function bbExit() {
@@ -841,7 +849,7 @@ function bbDiscard() {
   if (bbHasData() && !confirm('Discard this whole batch? Nothing has been saved yet.')) return;
   BB = { on: false, fromQ: false, date: '', rows: [] }; bbSave(); render(); window.scrollTo(0, 0);
 }
-const bbAmt = r => { const p = toPurity(r.purity), w = parseNum(r.weightBhy), q = p && !isNaN(p) ? quoteFor(p, DED) : null; return q && w > 0 ? Math.round(q.perBhy * w * 100) / 100 : null; };
+const bbAmt = r => { const p = toPurity(r.purity), w = parseNum(r.weightBhy), q = p && !isNaN(p) ? quoteFor(p, DED) : null; return q && w > 0 ? round2(q.perBhy * w) : null; };
 function bbRowHTML(r, i) {
   const amt = bbAmt(r);
   return `<div class="bbrow${r.err ? ' bad' : ''}" data-i="${i}" data-k="${esc(r.k)}"><div class="bbtop"><span class="n">${i + 1}</span>
@@ -851,7 +859,7 @@ function bbRowHTML(r, i) {
       <div><label for="bbw${i}">Weight (BHY)</label><input id="bbw${i}" data-f="w" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.weightBhy)}" placeholder="0.00"></div>
       <div><label for="bbp${i}">Purity %</label><input id="bbp${i}" data-f="p" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.purity)}" placeholder="85.35"></div></div>
       <div><label for="bbc${i}">Cost (₱)</label><input id="bbc${i}" data-f="c" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.cost)}" placeholder="0.00">
-      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : amt.toFixed(2)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${H(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
+      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : amt.toFixed(2)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
     ${r.err ? `<div class="bberr">${esc(r.err)}</div>` : ''}</div>`;
 }
 function bbHTML() {
@@ -869,7 +877,7 @@ function bbTotals() {
   const el = $('#bbTot'); if (!el) return;
   const bhy = (S() || {}).bhyPerGram || 2; let n = 0, w = 0, c = 0, miss = 0;
   BB.rows.forEach(r => { if (bbBlank(r)) return; n++; const x = parseNum(r.weightBhy), y = parseNum(r.cost); if (x > 0) w += x; if (y >= 0 && y !== null) c += y; else miss++; });
-  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${HG3(w / bhy)} g</b> <small style="color:#d8d1bd">(${HW(w)} BHY)</small></span><span>Cost <b id="bbC">${H(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
+  el.innerHTML = `<span>${n} of ${BB.rows.length} row${BB.rows.length === 1 ? '' : 's'}</span><span>Weight <b id="bbG">${g3(w / bhy)} g</b> <small style="color:#d8d1bd">(${wt(w)} BHY)</small></span><span>Cost <b id="bbC">${peso(c)}</b>${miss ? ` <small style="color:#ffb4ab">${miss} without cost</small>` : ''}</span>`;
   const sb = $('#bbSaveAll'); if (sb) sb.textContent = n ? `Save all ${n} purchase${n === 1 ? '' : 's'}` : 'Save all';
   const ct = $('#bbCount'); if (ct) ct.textContent = BB.rows.length + ' row' + (BB.rows.length === 1 ? '' : 's');
 }
@@ -877,7 +885,7 @@ function bbRowUpdate(i) {   // hint + totals only: never re-draws the box being 
   const r = BB.rows[i], row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!r || !row) return;
   const ch = row.querySelector('.chint'), amt = bbAmt(r);
   ch.classList.toggle('hidden', amt == null); ch.dataset.amt = amt == null ? '' : amt.toFixed(2);
-  ch.innerHTML = amt == null ? '' : `Quote: <b>${H(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
+  ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
   bbTotals();
 }
 function bbUseHint(i) { const row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!row) return; const v = row.querySelector('.chint').dataset.amt; if (!v) return;
@@ -925,7 +933,7 @@ function bindBB() {
     if (i < BB.rows.length - 1) return bbFocus(i + 1, 'w');
     saveAll();
   });
-  $('#bbd').addEventListener('input', () => { BB.date = $('#bbd').value; bbSave(); });
+  $('#bbd').addEventListener('input', () => { const d = $('#bbd').value; BB.date = d === todayISO() ? '' : d; bbSave(); });
   $('#bbSaveAll').onclick = saveAll;
   bbTotals();
 }
@@ -955,7 +963,7 @@ function saveAll() {
   if (BB.fromQ) { BQ = []; save(BQ_KEY, BQ); }
   forgetQuote();
   BB = { on: false, fromQ: false, date: '', rows: [] }; bbSave();
-  buyDraft = { date: d, weightBhy: '', purity: '', cost: '' }; render(); window.scrollTo(0, 0);
+  buyDraft = { date: d === todayISO() ? '' : d, weightBhy: '', purity: '', cost: '' }; render(); window.scrollTo(0, 0);
   const n = out.length, what = `${n} purchase${n === 1 ? '' : 's'}`;
   if (!navigator.onLine) return toast(`Saved ${what} offline. Will sync when back online`, 3500);
   toast(netDown ? `Saved ${what} on this device. Will sync when the sheet answers` : `Saved ${what} ✓, syncing…`, 3000);
@@ -977,9 +985,10 @@ document.addEventListener('focusout', e => {
 });
 
 // Stock
-function itemRowHTML(it) {
-  return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${HW(it.weightBhy)} BHY</b> · ${HP(it.purity)}<br>
-    <span class="muted">Cost ${H(it.cost)} · Profit <b>${prof(it.projProfit, 'stock:list')}</b></span></div>
+function itemRowHTML(it, g) {   // g: profit group (Stock list, or Buy's always-shown list)
+  g = typeof g === 'string' ? g : 'stock:list';
+  return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
+    <span class="muted">Cost ${peso(it.cost)} · Profit <b>${prof(it.projProfit, g)}</b></span></div>
     <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
 }
 // Projected profit of an unsynced purchase from the cached base (same rule as the sheet: base × purity × grams).
@@ -989,10 +998,11 @@ function qBadge(it) {
   if (it.error || it.hold) return '';
   return liveSync() ? `<span class="badge syncing">${inflight === it.rid ? 'sending…' : 'syncing'}</span>` : `<span class="badge">waiting to sync</span>`;
 }
-function qRowHTML(it) {
+function qRowHTML(it, g) {
+  g = typeof g === 'string' ? g : 'stock:list';
   const busyNow = inflight === it.rid;
-  return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no" aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span><div class="body"><b>${HW(it.weightBhy)} BHY</b> · ${HP(it.purity)} ${qBadge(it)}<br>
-    <span class="muted">Cost ${H(it.cost)} · ${esc(fmtDate(it.date))}${!it.error && !it.hold ? ` · Profit <b>${prof(qProfit(it), 'stock:list')}</b>` : ''}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
+  return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no" aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)} ${qBadge(it)}<br>
+    <span class="muted">Cost ${peso(it.cost)} · ${esc(fmtDate(it.date))}${!it.error && !it.hold ? ` · Profit <b>${prof(qProfit(it), g)}</b>` : ''}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
     ${it.error ? `<span class="qerr">Sheet said: ${esc(it.error)}</span>` : ''}${it.hold ? `<span class="qhold">${esc(it.hold)}</span>` : ''}</div>
     <div class="acts">${it.error ? `<button class="ed" aria-label="Retry" title="Retry" onclick="qRetry('${esc(it.rid)}')">↻</button>` : ''}${it.hold ? `<button class="ed" aria-label="Send anyway" title="Send anyway" onclick="qRetry('${esc(it.rid)}',true)">⤴</button>` : ''}<button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button><button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></div></div>`;
 }
@@ -1002,7 +1012,7 @@ const inlineQ = () => liveSync() ? loadQ().filter(x => !x.error && !x.hold) : []
 function queueHTML() {
   loadQ(); const inl = new Set(inlineQ().map(x => x.rid)), L = Q.filter(x => !inl.has(x.rid)); if (!L.length) return '';
   return `<div class="card qcard" id="qCard"><h2><span>⏳ Waiting to sync (${L.length})</span>${navigator.onLine && !syncing ? `<button class="btn sm gold" onclick="syncQueue()">Sync now</button>` : ''}</h2>
-    <div class="muted">Saved on this device${navigator.onLine ? '' : ' while offline'}. Each gets its No. when it reaches the sheet.</div>${L.map(qRowHTML).join('')}</div>`;
+    <div class="muted">Saved on this device${navigator.onLine ? '' : ' while offline'}. Each gets its No. when it reaches the sheet.</div>${L.map(x => qRowHTML(x)).join('')}</div>`;
 }
 function refineBtnHTML(n) {
   const why = Q.length ? `Wait until the ${Q.length} unsynced purchase${Q.length === 1 ? ' is' : 's are'} in the sheet so the batch doesn't miss ${Q.length === 1 ? 'it' : 'them'}.`
@@ -1016,15 +1026,15 @@ function stockHTML() {
   const tp = L.reduce((t, x) => t + (x.projProfit || 0), 0) + P.reduce((t, x) => t + (qProfit(x) || 0), 0);
   const tw = L.reduce((t, x) => t + (x.weightBhy || 0), 0) + P.reduce((t, x) => t + (x.weightBhy || 0), 0);
   const pend = P.map(it => { const s = S(), sell = s && s.base ? s.base * it.purity * it.weightBhy / (s.bhyPerGram || 2) : null;
-    return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(sell)}</td><td><b>${prof(qProfit(it), 'stock:list')}</b></td>
+    return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(sell)}</td><td><b>${prof(qProfit(it), 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button> <button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></td></tr>`; }).join('');
   const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
-    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
+    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}${pend}
-    <tr class="tot"><td>Total</td><td>${HW(tw)}</td><td></td><td>${H(tc)}</td><td></td><td><b>${prof(tp, 'stock:list')}</b></td><td></td></tr></tbody></table>`;
+    <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td><b>${prof(tp, 'stock:list')}</b></td><td></td></tr></tbody></table>`;
   return queueHTML() + refineBtnHTML(L.length) + `
     <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${L.length} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn('stock:list')}</h2>
-    ${table}<div class="mobile-only">${L.map(itemRowHTML).join('')}${P.map(qRowHTML).join('')}</div></div>`;
+    ${table}<div class="mobile-only">${L.map(x => itemRowHTML(x)).join('')}${P.map(x => qRowHTML(x)).join('')}</div></div>`;
 }
 function stockItem(no) { return (ST.stock || []).find(x => Number(x.no) === Number(no)); }
 function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="sheet" role="dialog">${html}</div>`; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) closeModal(); }); applyEye(); return m; }
@@ -1060,14 +1070,14 @@ async function openRefine() {
   modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${p.count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>
     <div class="sumlist">
       <div><span>Items</span><b>${p.count}</b></div>
-      <div><span>Raw grams</span><b>${HG3(p.rawG)} g</b></div>
-      <div><span>Refined grams (est.)</span><b>${HG3(p.refinedG)} g</b></div>
-      <div><span>Cost of items</span><b>${H(p.cost)}</b></div>
-      <div><span>Refining fee</span><b>${H(p.fee)}</b></div>
-      <div><span>Cost incl. fee</span><b>${H(p.costInclFee)}</b></div>
-      <div><span>Base frozen for this batch</span><b>${H(p.base)} / g</b></div>
+      <div><span>Raw grams</span><b>${g3(p.rawG)} g</b></div>
+      <div><span>Refined grams (est.)</span><b>${g3(p.refinedG)} g</b></div>
+      <div><span>Cost of items</span><b>${peso(p.cost)}</b></div>
+      <div><span>Refining fee</span><b>${peso(p.fee)}</b></div>
+      <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
+      <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
       <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(p.estProfit, 'stock:refine')}</b></div>
-      <div><span>Silver needed</span><b>${HG3(p.silverG)} g</b></div>
+      <div><span>Silver needed</span><b>${g3(p.silverG)} g</b></div>
     </div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
     <button class="btn gold" id="rgo">Refine ${p.count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
@@ -1083,21 +1093,21 @@ function salesHTML() {
   const B = ST.batches || [];
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
     <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
-    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${HG3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${HG3(b.refinedG)} g</b></div>
-    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${HG2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${H(b.base)}</b></div>
-    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${H(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit, 'sales:batches')}</b></div>`
-      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${H(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit, 'sales:batches')}</b></div>`}</div>
-    <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" onclick="openSale('${esc(b.id)}')">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
+    ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${g3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${g3(b.refinedG)} g</b></div>
+    ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${g2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${peso(b.base)}</b></div>
+    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${peso(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit, 'sales:batches')}</b></div>`
+      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${peso(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit, 'sales:batches')}</b></div>`}</div>
+    <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" data-id="${esc(b.id)}" onclick="openSale(this.dataset.id)">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
     : '<div class="empty">No refining batches yet. Use Batch refine on the Stock screen.</div>';
   const L = ST.sales || [];
-  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${H(s.actual)}</span></div><b>${prof(s.profit, 'sales:sales')}</b></div>`).join('')
+  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${peso(s.actual)}</span></div><b>${prof(s.profit, 'sales:sales')}</b></div>`).join('')
     : '<div class="empty">No sales recorded yet.</div>';
   return `<div class="two"><div class="card"><h2>Refining batches ${eyeBtn('sales:batches')}</h2>${batches}</div>
     <div class="card"><h2><span>Recent sales <span class="muted">profit</span></span>${eyeBtn('sales:sales')}</h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
 }
 function openSale(id) {
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
-  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${HG3(b.refinedG)} g refined (est.) · cost incl. fee ${H(b.costInclFee)}</div>
+  modal(`<h2>${b.recorded ? 'Correct sale' : 'Record sale'} · ${esc(id)}</h2><div class="muted">${g3(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}</div>
     <label for="sd">Sell date</label><input id="sd" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(b.sellDate) ? b.sellDate : todayISO())}">
     <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(b.sellBase ?? (ST.base || ''))}">
     <label for="sa">Actual amount received (₱) <span class="hint">optional, overrides grams × base</span></label><input id="sa" type="text" inputmode="decimal" value="${esc(b.actualAmt ?? '')}">
@@ -1105,7 +1115,7 @@ function openSale(id) {
     <button class="btn green" id="sgo">${b.recorded ? 'Save correction' : 'Record sale'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const calc = () => { const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
     const val = amt != null && !isNaN(amt) ? amt : (base > 0 ? b.refinedG * base : null);
-    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${H(val)} · profit <b>${prof(val - b.costInclFee, 'sales:calc')}</b></span>${eyeBtn('sales:calc')}</div>` : ''; };
+    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${peso(val)} · profit <b>${prof(val - b.costInclFee, 'sales:calc')}</b></span>${eyeBtn('sales:calc')}</div>` : ''; };
   ['sb', 'sa'].forEach(k => $('#' + k).addEventListener('input', calc)); calc();
   $('#sgo').onclick = async () => {
     const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
@@ -1130,7 +1140,7 @@ function openOtherSale() {
 }
 
 // In-stock boxes, from the stock the app already has (getState) plus purchases still on this device.
-const manilaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const manilaToday = todayISO;
 function stockRows() {
   const s = S() || {}, bhy = s.bhyPerGram || 2;
   const sheet = (ST.stock || []).map(x => ({ date: String(x.date || ''), grams: x.grams != null ? Number(x.grams) : Number(x.weightBhy) / bhy, purity: Number(x.purity) || 0, cost: Number(x.cost) || 0, local: false }));
@@ -1149,13 +1159,13 @@ function stockBoxesHTML() {
   return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
-        <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${HG3(A.g)} g</b></div>
-        <div><span>Cost</span><b id="sCost">${H(A.c)}</b></div><div><span>Est. value at ${H(ST.base)} / g</span><b id="sValue">${H(A.v)}</b></div>
+        <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${g3(A.g)} g</b></div>
+        <div><span>Cost</span><b id="sCost">${peso(A.c)}</b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue">${peso(A.v)}</b></div>
       </div>
       <div class="profrow"><span>Est. profit</span><b id="sProfit">${prof(A.p, 'dash:stock')}</b></div>${loc(A)}</div>
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
-      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${HG3(T.g)} g</b></div>
-      <div><span>Cost</span><b id="tCost">${H(T.c)}</b></div></div>${loc(T)}</div></div>`;
+      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${g3(T.g)} g</b></div>
+      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div></div>`;
 }
 
 // Dashboard (v10): stock first; this month's profit and the all-time totals folded into one dropdown.
@@ -1164,7 +1174,7 @@ function dashHTML() {
   const d = ST.dashboard || {}, m = ST.month;
   const month = m ? `<div class="month" id="monthCard"><div class="lbl" id="mName">${esc(m.name)} profit</div>
       <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit, 'dash:month')}</span>${eyeBtn('dash:month')}</div>
-      <div class="sec">Purchases this month <b id="mCost">${H(m.purchasesCost)}</b></div></div>`
+      <div class="sec">Purchases this month <b id="mCost">${peso(m.purchasesCost)}</b></div></div>`
     : `<div class="month" id="monthCard"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
   return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>Profit &amp; totals</summary><div class="inner">
     ${month}
@@ -1173,9 +1183,9 @@ function dashHTML() {
     <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
     <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit, 'dash:all')}</div>
       ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit, 'dash:all')} est.</div>` : ''}</div>
-    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${H(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
-    <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${H(d.cashUsed)}</div></div>
-  </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(when(lastSync))}</div>`;
+    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${peso(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
+    <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${peso(d.cashUsed)}</div></div>
+  </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(whenTxt(lastSync))}</div>`;
 }
 
 // Manual base price
@@ -1184,7 +1194,7 @@ function openBase() {
   if (!ST || !ST.base) return toast('Loading from the sheet…');
   modal(`<h2>Set base price</h2><div class="muted">Today's buying base per gram, after the ₱200 adjustment. It replaces the sheet's base until the next automatic update.</div>
     <label for="bb">Base price (₱ / g)</label><input id="bb" class="basein" type="text" inputmode="decimal" autocomplete="off" value="${esc(Number(ST.base).toFixed(2))}">
-    <div class="muted" style="margin-top:6px">Now ${H(ST.base)} / g · ${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div>
+    <div class="muted" style="margin-top:6px">Now ${peso(ST.base)} / g · ${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div>
     <button class="btn gold" id="bbsave">Save</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const el = $('#bb'); el.focus(); el.select();
   el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveBase(); } });
@@ -1194,7 +1204,7 @@ async function saveBase() {
   const v = parseNum($('#bb').value);
   if (v === null || isNaN(v)) return toast('Enter the base price, e.g. 8250');
   if (v < 1000 || v > 50000) return toast('Base must be between ₱1,000 and ₱50,000 / g');
-  const base = Math.round(v * 100) / 100;
+  const base = round2(v);
   if (!confirm(`Set base to ${peso(base)} / g?`)) return;
   const j = await write('setBase', { base }, $('#bbsave'));
   if (j) { closeModal(); render(); toast(safeMsg(j.message || 'Base updated ✓')); }
@@ -1207,10 +1217,10 @@ function openSettings() {
     <label for="cu">Web app URL</label><input id="cu" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(CFG.url)}">
     <label for="ct">Token</label><input id="ct" type="password" autocomplete="off" value="${esc(CFG.token)}">
     <button class="btn gold" id="csave">Save &amp; test</button>
-    ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${H(ST.base)} / g)</span></button>` : ''}
+    ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${peso(ST.base)} / g)</span></button>` : ''}
     ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
     <button class="btn light" onclick="closeModal()">Close</button>
-    <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(when(lastSync)) : ''}</div>`);
+    <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(whenTxt(lastSync)) : ''}</div>`);
   $('#csave').onclick = async () => {
     let u = $('#cu').value.trim(), t = $('#ct').value.trim();
     if (u.includes('|')) { const i = u.lastIndexOf('|'); t = u.slice(i + 1).trim(); u = u.slice(0, i).trim(); }
@@ -1241,7 +1251,9 @@ async function setupFromHash() {
   render(); return true;
 }
 window.addEventListener('hashchange', () => { if (/^#setup=/.test(location.hash)) setupFromHash(); else { const v = (location.hash.match(/^#(quote|buy|stock|sales|dash)$/) || [])[1]; if (v) go(v); } });
-window.addEventListener('focus', () => { if (connected() && lastSync && Date.now() - new Date(lastSync).getTime() > 60000) refresh(true); });
+const staleRefresh = () => { if (connected() && lastSync && Date.now() - new Date(lastSync).getTime() > 60000) refresh(true); };
+window.addEventListener('focus', staleRefresh);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') staleRefresh(); });
 window.addEventListener('online', () => { netDown = false; softRender(); if (connected()) refresh(true); });   // refresh syncs the queue first
 window.addEventListener('offline', () => softRender());
 window.addEventListener('storage', e => { if (e.key === Q_KEY) { loadQ(); softRender(); } if (e.key === TM_KEY) { TM = readTM(); applyEye(); } });
