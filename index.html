@@ -199,18 +199,15 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 .calc{margin-top:8px;background:var(--goldbg);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;font-size:16px}
 .calc b{font-size:18px}
 .side-brand{display:none}
-/* v15: per-tab hide-all toggle. Hidden tab: every wrapped value shows as •••• (inputs stay as typed). */
-.tabbar{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 10px;min-height:46px}
-.tabbar .tblbl{font-size:14px;font-weight:700;color:var(--muted)}
-.teye{border:2px solid var(--ink);background:#fff;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-size:16px;font-weight:800;cursor:pointer;flex:none}
-.teye svg{width:22px;height:22px}
+/* v16: per-tab profit toggle (Stock, Refining, Dashboard). Shows the current state: icon + "Profit visible" / "Profit hidden". */
+.tabbar{display:flex;justify-content:flex-end;margin:0 0 10px}
+.teye{border:2px solid var(--ink);background:#fff;color:var(--ink);border-radius:12px;min-width:46px;min-height:50px;padding:4px 14px 4px 10px;display:inline-flex;align-items:center;gap:9px;font:inherit;cursor:pointer;flex:none;text-align:left}
+.teye svg{width:24px;height:24px;flex:none}
+.teye .tbtxt{display:flex;flex-direction:column;line-height:1.15}
+.teye .tblbl{font-size:16px;font-weight:900}
+.teye .tact{font-size:12px;font-weight:600;color:inherit;opacity:.8}
 .teye[aria-pressed=true]{background:var(--ink);color:var(--gold2)}
-body.thide .tabbar .tblbl{color:var(--ink)}
-/* the wrappers are invisible: never pick up span styles (e.g. .stk .figs span, .batch .grid span) */
-.hv,.hv>.hr{display:inline!important;font-size:inherit!important;font-weight:inherit!important;color:inherit!important;background:none!important;padding:0!important;margin:0!important;border:0!important}
-body.thide .hv>.hr{display:none!important}
-body.thide .hv::after{content:"••••";letter-spacing:1px;color:var(--muted);font-weight:800}
-body.thide .eye{opacity:.45}
+.teye,.eye{touch-action:manipulation;user-select:none;-webkit-user-select:none}
 /* v14: batch purchase screen */
 .bball{background:var(--green);color:#fff;margin-top:12px}
 .bbrow{border:2px solid var(--line);border-left:6px solid var(--line);border-radius:12px;padding:8px 10px 10px;margin-top:10px;background:#fff;transition:background .1s,border-color .1s;scroll-margin:120px 0 110px}
@@ -274,7 +271,7 @@ body.thide .eye{opacity:.45}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -286,44 +283,64 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const num = n => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const peso = n => (n == null || isNaN(n)) ? '–' : (Number(n) < 0 ? '−₱' : '₱') + num(Math.abs(Number(n)));
 const sgn = n => n == null ? '' : (Number(n) < 0 ? 'neg' : 'pos');
-// ---------- profit privacy (hidden on every open; never saved) ----------
-let SHOW = false;
+// ---------- profit privacy, per tab (v16) ----------
+// Every profit eye controls its own group of profit figures ("tab:group"). Tabs with profit: Stock, Refining, Dashboard.
+// Each of those tabs has a main toggle at the top with its OWN state, "Hidden" or "Shown" (its label). Tapping it flips that
+// state and forces every profit figure (every eye) on the tab to match. Flipping a single eye changes only that eye's figures;
+// the main toggle's state and label stay as they are. Main + eye states are saved per tab on this device (default: all
+// hidden) and restored on every re-render and reload, so the app opens as it was left.
+// Buy has no profit of its own: its desktop "Last added" list is stock and follows the Stock list eye. Quote shows no profit.
 const MASK = '₱ ••••••';
 const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-// A profit amount: masked unless SHOW. data-v keeps the number so the eye can flip it in place.
-const prof = (n, extra) => { const has = n != null && !isNaN(n);
-  return hv(`<span class="pv${SHOW || !has ? ' ' + sgn(has ? n : null) : ' masked'}${extra ? ' ' + extra : ''}" data-v="${has ? Number(n) : ''}">${SHOW || !has ? peso(n) : MASK}</span>`); };
-const eyeBtn = () => `<button type="button" class="eye" aria-pressed="${SHOW}" aria-label="${SHOW ? 'Hide profit' : 'Show profit'}" title="${SHOW ? 'Hide profit' : 'Show profit'}" onclick="toggleEye(event)">${SHOW ? EYE_OFF : EYE_OPEN}</button>`;
-function toggleEye(e) { if (e) { e.preventDefault(); e.stopPropagation(); } SHOW = !SHOW; applyEye(); }
-function applyEye() {
-  document.querySelectorAll('.pv').forEach(el => { const v = el.dataset.v; if (v === '') return; const n = Number(v);
-    el.textContent = SHOW ? peso(n) : MASK; el.classList.toggle('masked', !SHOW); el.classList.toggle('pos', SHOW && n >= 0); el.classList.toggle('neg', SHOW && n < 0); });
-  document.querySelectorAll('.eye').forEach(b => { b.setAttribute('aria-pressed', String(SHOW)); const l = SHOW ? 'Hide profit' : 'Show profit'; b.setAttribute('aria-label', l); b.title = l; b.innerHTML = SHOW ? EYE_OFF : EYE_OPEN; });
-}
-// ---------- v15: per-tab "hide all values" (on top of the profit eye) ----------
-// Each tab (quote, buy, stock, sales, dash) has its own switch, remembered on this device. Default: values visible.
-// Hidden tab: every value wrapped by hv() (money, weights, grams, purities, counts, profit) shows as ••••, whatever the profit eye says.
-// Visible tab: nothing changes, so the profit eye (masked on every open) works exactly as before. Inputs are never masked.
-const TABS = ['quote', 'buy', 'stock', 'sales', 'dash'];
-let TM = (() => { const v = load(TM_KEY); const o = {}; if (v && typeof v === 'object') TABS.forEach(t => { if (v[t] === 1 || v[t] === true) o[t] = 1; }); return o; })();
-const tabMasked = v => !!TM[v || view];
-const hv = s => `<span class="hv"><span class="hr">${s}</span></span>`;
-const H = n => hv(peso(n)), HW = w => hv(wt(w)), HP = p => hv(pct(p)), HG3 = w => hv(g3(w)), HG2 = w => hv(g2(w));
-const TAB_NAME = { quote: 'Quote', buy: 'Buy', stock: 'Stock', sales: 'Refining', dash: 'Dashboard' };
-function tabBarHTML() {
-  const m = tabMasked(), l = m ? 'Show values on this tab' : 'Hide values on this tab';
-  return `<div class="tabbar" id="tabBar"><span class="tblbl" id="tabLbl">${m ? '🔒 Values hidden' : 'Values visible'}</span><button type="button" class="teye" id="tabEye" data-tab="${view}" aria-pressed="${m}" aria-label="${l}" title="${l}" onmousedown="event.preventDefault()" onclick="toggleTab(event)">${m ? EYE_OPEN : EYE_OFF}<span>${m ? 'Show' : 'Hide'}</span></button></div>`;
-}
-function applyTabMask() {
-  const m = tabMasked(); document.body.classList.toggle('thide', m); document.body.dataset.tab = view;
-  const b = $('#tabEye'); if (b) { const l = m ? 'Show values on this tab' : 'Hide values on this tab';
-    b.dataset.tab = view; b.setAttribute('aria-pressed', String(m)); b.setAttribute('aria-label', l); b.title = l; b.innerHTML = (m ? EYE_OPEN : EYE_OFF) + `<span>${m ? 'Show' : 'Hide'}</span>`; }
-  const t = $('#tabLbl'); if (t) t.textContent = m ? '🔒 Values hidden' : 'Values visible';
-}
-function toggleTab(e) {   // flips only this tab; never re-draws, so a box being typed in keeps focus and text
+const GROUPS = { stock: ['list', 'refine'], sales: ['batches', 'sales', 'calc'], dash: ['stock', 'month', 'all'] };
+const TABS = Object.keys(GROUPS);
+// Saved as { stock: { m: 0|1, list: 0|1, refine: 0|1 }, sales: {...}, dash: {...} }: m = main toggle; 1 = hidden, 0 = shown, missing = hidden.
+// Anything else (v15 settings like { stock: 1 }, quote / buy) is dropped.
+const readTM = () => { const v = load(TM_KEY); const o = {};
+  if (v && typeof v === 'object') TABS.forEach(t => { const x = v[t]; if (x && typeof x === 'object') ['m'].concat(GROUPS[t]).forEach(g => { if (x[g] === 0 || x[g] === 1) { o[t] = o[t] || {}; o[t][g] = x[g]; } }); });
+  if (v && JSON.stringify(v) !== JSON.stringify(o)) save(TM_KEY, o);
+  return o; };
+let TM = readTM();
+const profTab = v => { v = v || view; return v === 'buy' ? 'stock' : v; };
+const gShown = g => { const [t, k] = String(g).split(':'); return !!(TM[t] && TM[t][k] === 0); };
+function setG(g, on) { const [t, k] = g.split(':'); if (!GROUPS[t] || !GROUPS[t].includes(k)) return; TM[t] = TM[t] || {}; TM[t][k] = on ? 0 : 1; }
+const hv = s => s, H = n => peso(n), HW = w => wt(w), HP = x => pct(x), HG3 = w => g3(w), HG2 = w => g2(w);   // v15 money/quantity masking removed: only profit is masked
+// A profit figure of group g. data-v keeps the number and data-g the group, so the eyes can flip it in place.
+const prof = (n, g) => { const has = n != null && !isNaN(n), on = gShown(g);
+  return `<span class="pv${on || !has ? ' ' + sgn(has ? n : null) : ' masked'}" data-g="${g}" data-v="${has ? Number(n) : ''}">${on || !has ? peso(n) : MASK}</span>`; };
+// Small eyes, like the main toggle, show the CURRENT state: open eye = shown, crossed eye = hidden; the label says state first.
+const eyeLbl = on => on ? 'Profit shown. Tap to hide' : 'Profit hidden. Tap to show';
+const eyeBtn = g => { const on = gShown(g); return `<button type="button" class="eye" data-g="${g}" aria-pressed="${on}" aria-label="${eyeLbl(on)}" title="${eyeLbl(on)}" onmousedown="event.preventDefault()" onclick="toggleEye(event)">${on ? EYE_OPEN : EYE_OFF}</button>`; };
+function toggleEye(e) {   // one eye: only its own figures change
   if (e) { e.preventDefault(); e.stopPropagation(); }
-  if (TM[view]) delete TM[view]; else TM[view] = 1; save(TM_KEY, TM); applyTabMask();
+  const b = e && e.currentTarget, g = b && b.dataset.g; if (!g) return;
+  setG(g, !gShown(g)); save(TM_KEY, TM); applyEye();
+}
+// The main toggle's own state for tab t: 'shown' or 'hidden' (default hidden). Eyes never change it.
+const tabState = t => { t = t || profTab(); return GROUPS[t] && TM[t] && TM[t].m === 0 ? 'shown' : 'hidden'; };
+function tabCtl(st) {
+  const on = st === 'shown', a = on ? 'Shown. Tap to hide all profit on this tab' : 'Hidden. Tap to show all profit on this tab';
+  return { aria: a, html: `${on ? EYE_OPEN : EYE_OFF}<span class="tbtxt"><span class="tblbl" id="tabLbl">${on ? 'Shown' : 'Hidden'}</span><small class="tact">${on ? 'Tap to hide all' : 'Tap to show all'}</small></span>` };
+}
+function tabBarHTML() {   // filled in by applyEye() right after the page is drawn
+  if (!TABS.includes(view)) return '';
+  return `<div class="tabbar" id="tabBar"><button type="button" class="teye" id="tabEye" data-tab="${view}" onmousedown="event.preventDefault()" onclick="toggleTab(event)"></button></div>`;
+}
+// Figures, eyes and the main toggle, all from the saved states. Called after every render / soft re-render / pop-up.
+function applyEye() {
+  document.body.dataset.tab = view;
+  document.querySelectorAll('.pv').forEach(el => { const v = el.dataset.v; if (v === '' || !el.dataset.g) return; const n = Number(v), on = gShown(el.dataset.g);
+    el.textContent = on ? peso(n) : MASK; el.classList.toggle('masked', !on); el.classList.toggle('pos', on && n >= 0); el.classList.toggle('neg', on && n < 0); });
+  document.querySelectorAll('.eye').forEach(b => { const on = gShown(b.dataset.g); b.setAttribute('aria-pressed', String(on)); const l = eyeLbl(on); b.setAttribute('aria-label', l); b.title = l; b.innerHTML = on ? EYE_OPEN : EYE_OFF; });
+  const b = $('#tabEye'); if (b) { const st = tabState(view), t = tabCtl(st);
+    b.dataset.tab = view; b.dataset.state = st; b.setAttribute('aria-pressed', String(st === 'hidden')); b.setAttribute('aria-label', t.aria); b.title = t.aria; b.innerHTML = t.html; }
+}
+const applyTabMask = applyEye;
+function toggleTab(e) {   // main toggle: flip its own state, every eye on the tab follows. Never re-draws the page.
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  const t = profTab(); if (!TABS.includes(t)) return;
+  const on = tabState(t) !== 'shown'; TM[t] = TM[t] || {}; TM[t].m = on ? 0 : 1; GROUPS[t].forEach(k => setG(t + ':' + k, on)); save(TM_KEY, TM); applyEye();
 }
 const pct = p => (Number(p) * 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + '%';
 const wt = w => Number(w).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -333,6 +350,12 @@ const hasNum = v => v !== null && v !== undefined && v !== '' && isFinite(Number
 const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const fmtDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return iso || ''; return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+// Sheet answers like "Sale added. Profit ₱1,234.00." follow the tab's profit switch.
+function safeMsg(m) {
+  m = String(m == null ? '' : m);
+  if (!gShown(view === 'sales' ? 'sales:sales' : profTab() + ':' + ((GROUPS[profTab()] || [''])[0]))) return m.replace(/(profit\s*:?\s*)[−-]?₱\s?\d[\d,]*(\.\d+)?/gi, '$1' + MASK);
+  return m;
+}
 function toast(msg, ms) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms || 2600); }
 function parseNum(v) { const s = String(v == null ? '' : v).replace(/[,\s%₱]|PHP/gi, ''); if (s === '') return null; const n = Number(s); return isFinite(n) ? n : NaN; }
 function toPurity(v) { // 85.35, 85.35% or 0.8535 -> 0.8535 (same as the sheet)
@@ -432,10 +455,10 @@ async function refresh(quiet) {
 }
 async function write(action, data, btn) {
   if (!navigator.onLine) { alert(OFFLINE_MSG); render(); return null; }
-  if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = 'Saving…'; }
+  if (btn) { btn.disabled = true; btn._t = btn.innerHTML; btn.textContent = 'Saving…'; }
   try { const j = await api(action, data, true); return j; }
   catch (e) { alert(e.net ? (navigator.onLine ? e.message : OFFLINE_MSG) : e.message); if (e.net) render(); return null; }
-  finally { if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = btn._t; } }
+  finally { if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = btn._t; } }
 }
 
 // ---------- offline queue (purchases only) ----------
@@ -956,7 +979,7 @@ document.addEventListener('focusout', e => {
 // Stock
 function itemRowHTML(it) {
   return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${HW(it.weightBhy)} BHY</b> · ${HP(it.purity)}<br>
-    <span class="muted">Cost ${H(it.cost)} · Profit <b>${prof(it.projProfit)}</b></span></div>
+    <span class="muted">Cost ${H(it.cost)} · Profit <b>${prof(it.projProfit, 'stock:list')}</b></span></div>
     <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
 }
 // Projected profit of an unsynced purchase from the cached base (same rule as the sheet: base × purity × grams).
@@ -969,7 +992,7 @@ function qBadge(it) {
 function qRowHTML(it) {
   const busyNow = inflight === it.rid;
   return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no" aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span><div class="body"><b>${HW(it.weightBhy)} BHY</b> · ${HP(it.purity)} ${qBadge(it)}<br>
-    <span class="muted">Cost ${H(it.cost)} · ${esc(fmtDate(it.date))}${!it.error && !it.hold ? ` · Profit <b>${prof(qProfit(it))}</b>` : ''}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
+    <span class="muted">Cost ${H(it.cost)} · ${esc(fmtDate(it.date))}${!it.error && !it.hold ? ` · Profit <b>${prof(qProfit(it), 'stock:list')}</b>` : ''}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
     ${it.error ? `<span class="qerr">Sheet said: ${esc(it.error)}</span>` : ''}${it.hold ? `<span class="qhold">${esc(it.hold)}</span>` : ''}</div>
     <div class="acts">${it.error ? `<button class="ed" aria-label="Retry" title="Retry" onclick="qRetry('${esc(it.rid)}')">↻</button>` : ''}${it.hold ? `<button class="ed" aria-label="Send anyway" title="Send anyway" onclick="qRetry('${esc(it.rid)}',true)">⤴</button>` : ''}<button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button><button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></div></div>`;
 }
@@ -993,19 +1016,19 @@ function stockHTML() {
   const tp = L.reduce((t, x) => t + (x.projProfit || 0), 0) + P.reduce((t, x) => t + (qProfit(x) || 0), 0);
   const tw = L.reduce((t, x) => t + (x.weightBhy || 0), 0) + P.reduce((t, x) => t + (x.weightBhy || 0), 0);
   const pend = P.map(it => { const s = S(), sell = s && s.base ? s.base * it.purity * it.weightBhy / (s.bhyPerGram || 2) : null;
-    return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(sell)}</td><td><b>${prof(qProfit(it))}</b></td>
+    return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(sell)}</td><td><b>${prof(qProfit(it), 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button> <button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></td></tr>`; }).join('');
   const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
-    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(it.projSell)}</td><td><b>${prof(it.projProfit)}</b></td>
+    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${HW(it.weightBhy)}</td><td>${HP(it.purity)}</td><td>${H(it.cost)}</td><td>${H(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}${pend}
-    <tr class="tot"><td>Total</td><td>${HW(tw)}</td><td></td><td>${H(tc)}</td><td></td><td><b>${prof(tp)}</b></td><td></td></tr></tbody></table>`;
+    <tr class="tot"><td>Total</td><td>${HW(tw)}</td><td></td><td>${H(tc)}</td><td></td><td><b>${prof(tp, 'stock:list')}</b></td><td></td></tr></tbody></table>`;
   return queueHTML() + refineBtnHTML(L.length) + `
-    <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${hv(L.length)} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn()}</h2>
+    <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${L.length} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn('stock:list')}</h2>
     ${table}<div class="mobile-only">${L.map(itemRowHTML).join('')}${P.map(qRowHTML).join('')}</div></div>`;
 }
 function stockItem(no) { return (ST.stock || []).find(x => Number(x.no) === Number(no)); }
-function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="sheet" role="dialog">${html}</div>`; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) closeModal(); }); return m; }
-function closeModal() { const m = $('#modal'); if (m) m.remove(); }
+function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="sheet" role="dialog">${html}</div>`; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) closeModal(); }); applyEye(); return m; }
+function closeModal() { const m = $('#modal'); if (m) { m.remove(); applyEye(); } }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 function editItem(no) {
   const it = stockItem(no); if (!it) return;
@@ -1019,13 +1042,13 @@ function editItem(no) {
     const w = parseNum($('#ew').value), p = toPurity($('#ep').value), c = parseNum($('#ec').value);
     if (!(w > 0)) return toast('Enter the weight in BHY'); if (p === null || isNaN(p)) return toast('Enter a valid purity'); if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
     const j = await write('editPurchase', { no, weightBhy: w, purity: p, cost: c, date: $('#ed').value }, $('#esave'));
-    if (j) { closeModal(); render(); toast(j.message); }
+    if (j) { closeModal(); render(); toast(safeMsg(j.message)); }
   };
 }
 async function delItem(no) {
   const it = stockItem(no); if (!it) return;
   if (!confirm(`Delete #${no}?\n${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)}\n\nThis removes the row from the Purchases tab.`)) return;
-  const j = await write('deletePurchase', { no }); if (j) { render(); toast(j.message); }
+  const j = await write('deletePurchase', { no }); if (j) { render(); toast(safeMsg(j.message)); }
 }
 async function openRefine() {
   if (loadQ().length) { render(); return alert('Some purchases are still waiting to sync. Sync them (or delete them) first so the batch includes everything.'); }
@@ -1036,14 +1059,14 @@ async function openRefine() {
   if (!p.count) return toast('No items in stock');
   modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${p.count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>
     <div class="sumlist">
-      <div><span>Items</span><b>${hv(p.count)}</b></div>
+      <div><span>Items</span><b>${p.count}</b></div>
       <div><span>Raw grams</span><b>${HG3(p.rawG)} g</b></div>
       <div><span>Refined grams (est.)</span><b>${HG3(p.refinedG)} g</b></div>
       <div><span>Cost of items</span><b>${H(p.cost)}</b></div>
       <div><span>Refining fee</span><b>${H(p.fee)}</b></div>
       <div><span>Cost incl. fee</span><b>${H(p.costInclFee)}</b></div>
       <div><span>Base frozen for this batch</span><b>${H(p.base)} / g</b></div>
-      <div class="big"><span>Est. profit ${eyeBtn()}</span><b>${prof(p.estProfit)}</b></div>
+      <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(p.estProfit, 'stock:refine')}</b></div>
       <div><span>Silver needed</span><b>${HG3(p.silverG)} g</b></div>
     </div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
@@ -1051,7 +1074,7 @@ async function openRefine() {
   $('#rgo').onclick = async () => {
     if (loadQ().length) { closeModal(); render(); return alert('A purchase is waiting to sync. Sync it first so the batch includes it.'); }
     const r = await write('batchRefine', { batchId: $('#rid').value.trim(), expectNos: p.nos }, $('#rgo'));
-    if (r) { closeModal(); go('sales'); toast(r.message, 4000); }
+    if (r) { closeModal(); go('sales'); toast(safeMsg(r.message), 4000); }
   };
 }
 
@@ -1059,18 +1082,18 @@ async function openRefine() {
 function salesHTML() {
   const B = ST.batches || [];
   const batches = B.length ? B.map(b => `<div class="batch"><div class="top"><b>${esc(b.id)}</b><span class="badge ${b.status === 'Sold' ? 'sold' : b.status === 'Refining' ? '' : 'warn'}">${esc(b.status)}</span></div>
-    <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${hv(esc(b.items ?? '–'))}</b></div>
+    <div class="grid"><div><span>Date</span><br><b>${fmtDate(b.date)}</b></div><div><span>Items</span><br><b>${esc(b.items ?? '–')}</b></div>
     ${hasNum(b.rawG) ? `<div class="bRaw"><span>Raw weight before refining</span><br><b>${HG3(b.rawG)} g</b></div>` : ''}<div><span>Refined (est.)</span><br><b>${HG3(b.refinedG)} g</b></div>
     ${hasNum(b.silverG) ? `<div class="bSilver"><span>Silver needed</span><br><b>${HG2(b.silverG)} g</b></div>` : ''}<div><span>Base at batch</span><br><b>${H(b.base)}</b></div>
-    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${H(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit)}</b></div>`
-      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${H(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit)}</b></div>`}</div>
+    ${b.status === 'Refining' ? `<div><span>Cost incl. fee</span><br><b>${H(b.costInclFee)}</b></div><div><span>Est. profit</span><br><b>${prof(b.estProfit, 'sales:batches')}</b></div>`
+      : `<div><span>Sold</span><br><b>${fmtDate(b.sellDate)}</b></div><div><span>Received</span><br><b>${H(b.actualValue)}</b></div><div><span>Profit</span><br><b>${prof(b.actualProfit, 'sales:batches')}</b></div>`}</div>
     <button class="btn ${b.status === 'Refining' ? 'green' : 'light'}" onclick="openSale('${esc(b.id)}')">${b.status === 'Refining' ? '✅ Record sale' : '✏️ Correct sale'}</button></div>`).join('')
     : '<div class="empty">No refining batches yet. Use Batch refine on the Stock screen.</div>';
   const L = ST.sales || [];
-  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${H(s.actual)}</span></div><b>${prof(s.profit)}</b></div>`).join('')
+  const sales = L.length ? L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${s.batch ? 'Batch ' + esc(s.batch) : 'Other sale'} · received ${H(s.actual)}</span></div><b>${prof(s.profit, 'sales:sales')}</b></div>`).join('')
     : '<div class="empty">No sales recorded yet.</div>';
-  return `<div class="two"><div class="card"><h2>Refining batches ${eyeBtn()}</h2>${batches}</div>
-    <div class="card"><h2><span>Recent sales <span class="muted">profit</span></span>${eyeBtn()}</h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
+  return `<div class="two"><div class="card"><h2>Refining batches ${eyeBtn('sales:batches')}</h2>${batches}</div>
+    <div class="card"><h2><span>Recent sales <span class="muted">profit</span></span>${eyeBtn('sales:sales')}</h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
 }
 function openSale(id) {
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;
@@ -1082,14 +1105,14 @@ function openSale(id) {
     <button class="btn green" id="sgo">${b.recorded ? 'Save correction' : 'Record sale'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   const calc = () => { const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
     const val = amt != null && !isNaN(amt) ? amt : (base > 0 ? b.refinedG * base : null);
-    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${H(val)} · profit <b>${prof(val - b.costInclFee)}</b></span>${eyeBtn()}</div>` : ''; };
+    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${H(val)} · profit <b>${prof(val - b.costInclFee, 'sales:calc')}</b></span>${eyeBtn('sales:calc')}</div>` : ''; };
   ['sb', 'sa'].forEach(k => $('#' + k).addEventListener('input', calc)); calc();
   $('#sgo').onclick = async () => {
     const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
     if (!$('#sd').value) return toast('Pick the sell date');
     if (!(base > 0) && !(amt >= 0 && amt !== null)) return toast('Enter the sell base or the amount received');
     const j = await write('recordBatchSale', { batchId: id, sellDate: $('#sd').value, sellBase: base > 0 ? base : '', actualAmt: amt != null && !isNaN(amt) ? amt : '' }, $('#sgo'));
-    if (j) { closeModal(); render(); toast(j.message, 4000); }
+    if (j) { closeModal(); render(); toast(safeMsg(j.message), 4000); }
   };
 }
 function openOtherSale() {
@@ -1102,7 +1125,7 @@ function openOtherSale() {
     const c = parseNum($('#oc').value), a = parseNum($('#oa').value);
     if (c === null || isNaN(c)) return toast('Enter the cost'); if (a === null || isNaN(a)) return toast('Enter the amount received');
     const j = await write('addSale', { date: $('#od').value, cost: c, actual: a, grams: $('#og').value, base: $('#ob').value }, $('#ogo'));
-    if (j) { closeModal(); render(); toast(j.message, 4000); }
+    if (j) { closeModal(); render(); toast(safeMsg(j.message), 4000); }
   };
 }
 
@@ -1124,14 +1147,14 @@ function stockBoxesHTML() {
   const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), A = stockSum(all);
   const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
   return `<div class="stkwrap" id="stockMain">
-    <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn()}</h3>
+    <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
-        <div><span>Items</span><b id="sCount">${hv(A.n)}</b></div><div><span>Grams</span><b id="sGrams">${HG3(A.g)} g</b></div>
+        <div><span>Items</span><b id="sCount">${A.n}</b></div><div><span>Grams</span><b id="sGrams">${HG3(A.g)} g</b></div>
         <div><span>Cost</span><b id="sCost">${H(A.c)}</b></div><div><span>Est. value at ${H(ST.base)} / g</span><b id="sValue">${H(A.v)}</b></div>
       </div>
-      <div class="profrow"><span>Est. profit</span><b id="sProfit">${prof(A.p)}</b></div>${loc(A)}</div>
+      <div class="profrow"><span>Est. profit</span><b id="sProfit">${prof(A.p, 'dash:stock')}</b></div>${loc(A)}</div>
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
-      <div><span>Items</span><b id="tCount">${hv(T.n)}</b></div><div><span>Grams</span><b id="tGrams">${HG3(T.g)} g</b></div>
+      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${HG3(T.g)} g</b></div>
       <div><span>Cost</span><b id="tCost">${H(T.c)}</b></div></div>${loc(T)}</div></div>`;
 }
 
@@ -1140,16 +1163,16 @@ let dashOpen = false;
 function dashHTML() {
   const d = ST.dashboard || {}, m = ST.month;
   const month = m ? `<div class="month" id="monthCard"><div class="lbl" id="mName">${esc(m.name)} profit</div>
-      <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit)}</span>${eyeBtn()}</div>
+      <div class="big"><span class="val" id="mProfit">${prof(m.realizedProfit, 'dash:month')}</span>${eyeBtn('dash:month')}</div>
       <div class="sec">Purchases this month <b id="mCost">${H(m.purchasesCost)}</b></div></div>`
     : `<div class="month" id="monthCard"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
   return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open"><summary>Profit &amp; totals</summary><div class="inner">
     ${month}
-    <div class="eyerow"><span class="muted">All-time totals</span>${eyeBtn()}</div>
+    <div class="eyerow"><span class="muted">All-time totals</span>${eyeBtn('dash:all')}</div>
     <div class="tiles">
-    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized)}</div></div>
-    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit)}</div>
-      ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit)} est.</div>` : ''}</div>
+    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
+    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val" id="dRef">${prof(d.estRefiningProfit, 'dash:all')}</div>
+      ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit, 'dash:all')} est.</div>` : ''}</div>
     <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val" id="dBase">${H(ST.base)}</div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
     <div class="tile ink"><div class="lbl">Cash used</div><div class="val" id="dCash">${H(d.cashUsed)}</div></div>
   </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(when(lastSync))}</div>`;
@@ -1174,7 +1197,7 @@ async function saveBase() {
   const base = Math.round(v * 100) / 100;
   if (!confirm(`Set base to ${peso(base)} / g?`)) return;
   const j = await write('setBase', { base }, $('#bbsave'));
-  if (j) { closeModal(); render(); toast(j.message || 'Base updated ✓'); }
+  if (j) { closeModal(); render(); toast(safeMsg(j.message || 'Base updated ✓')); }
 }
 $('#basePill').onclick = openBase;
 
@@ -1221,7 +1244,7 @@ window.addEventListener('hashchange', () => { if (/^#setup=/.test(location.hash)
 window.addEventListener('focus', () => { if (connected() && lastSync && Date.now() - new Date(lastSync).getTime() > 60000) refresh(true); });
 window.addEventListener('online', () => { netDown = false; softRender(); if (connected()) refresh(true); });   // refresh syncs the queue first
 window.addEventListener('offline', () => softRender());
-window.addEventListener('storage', e => { if (e.key === Q_KEY) { loadQ(); softRender(); } });
+window.addEventListener('storage', e => { if (e.key === Q_KEY) { loadQ(); softRender(); } if (e.key === TM_KEY) { TM = readTM(); applyEye(); } });
 setInterval(() => {   // every 60 s: retry the queue, or check whether the sheet is reachable again
   if (!connected() || !navigator.onLine || busy || syncing) return;
   if (pendingQ().length) syncQueue(); else if (netDown) refresh(true);
