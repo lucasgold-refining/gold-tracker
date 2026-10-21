@@ -316,7 +316,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -721,7 +721,7 @@ function quoteHTML() {
     ${modeToggleHTML()}
     <h2>Buying quote</h2>
     <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
-    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="${B ? 'enter' : 'go'}" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="87.1" value="${esc(qVal)}"></div>
+    <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="${B ? 'enter' : 'go'}" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="%" value="${esc(qVal)}"></div>
     <div class="cellhint" id="qHint">${B ? 'Type purity, press Enter to add to batch' : 'Type purity, press Enter to buy'}</div>
     <div class="seglbl">Deduction below ${s ? pct(s.fullMin) : '99.8%'}</div>${dedToggleHTML()}
     <div id="qout"></div>
