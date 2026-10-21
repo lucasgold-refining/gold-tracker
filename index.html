@@ -316,7 +316,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -742,7 +742,7 @@ function qOutHTML(v) {
     <div class="price" id="qPrice">${peso(q.perBhy)}</div>
     <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
     <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}
-    <button type="button" class="btn buythis" id="qbuy" onclick="buyFrom(${p})">🛒 Buy this</button></div>`;
+    <button type="button" class="btn buythis" id="qbuy" onclick="quoteToBuy(${p})">🛒 Buy this</button></div>`;
 }
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(whenTxt(lastSync))}</div>` : '';
 function bqHTML() {
@@ -783,7 +783,7 @@ function bindQuote() {
     if (QMODE === 'batch') { bqAdd(); return; }
     const p = toPurity(el.value);
     if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); selectAll(el); return; }
-    qVal = el.value; buyFrom(p);
+    quoteToBuy(p);
   });
   $('#qadd').onclick = bqAdd;
   upd();
@@ -832,6 +832,13 @@ function prefillBuy() {   // direct tab switch: only an empty form, never over w
   const d = buyDraft; if (d.weightBhy || d.purity || d.cost) return;
   const q = freshQuote(); if (!q) return;
   qPre = pTxt(q.p); buyDraft = Object.assign({}, d, { purity: qPre });
+}
+// v24, Single quote: Enter (or "🛒 Buy this") hands the purity to Buy and empties the Quote box (shows "%"),
+// so the next customer's quote starts fresh. Leaving Quote by a tab keeps what was typed. Batch rows' 🛒 unchanged.
+function quoteToBuy(p) {
+  p = Number(p); if (!(p > 0 && p <= 1)) return;
+  qVal = ''; const el = $('#qp'); if (el) el.value = '';
+  buyFrom(p);
 }
 function buyFrom(p) {     // "🛒 Buy this": purity from the quote, focus on Weight
   p = Number(p); if (!(p > 0 && p <= 1)) return;
