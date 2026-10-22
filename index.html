@@ -61,6 +61,9 @@ input[type=date]:focus{background:#fff4cc}
 label.flbl{width:fit-content;max-width:calc(100% + 16px);background:#ffd95a;color:#221c0e;font-weight:900;border-radius:7px;padding:0 8px;margin-left:-8px;margin-right:-8px;box-shadow:0 0 0 1px #b45309}
 label.flbl .hint{color:#3d2c00;font-weight:500}
 input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
+/* v32: an empty Buy / edit purity box shows just a centered "%", like the Quote box */
+input.pur:placeholder-shown{text-align:center}
+input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 /* Quote purity box: a spreadsheet-style cell. The whole box is the tap target; focus = Excel-like green selection. */
 .cell{display:block;cursor:text;background:#fff;border:2px solid #8f8771;border-radius:12px;padding:6px;transition:border-color .1s,box-shadow .1s}
 .cell input.bigin{border:0;box-shadow:none;min-height:84px;font-size:38px;border-radius:8px;background:transparent;caret-color:#b45309}
@@ -155,10 +158,16 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .btn.buythis{background:var(--green);color:#fff;margin-top:12px}
 .pnote{text-align:left;margin:6px 0 0;font-size:12px;color:#8f8771}
 .xrf{margin:4px 0 12px;padding:10px 12px;border:2px solid var(--goldline);border-radius:12px;background:var(--goldbg);font-size:14px}
-.xrf .xtop{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.xrf .xst{font-weight:800;flex:1;min-width:0;overflow-wrap:anywhere}
+.xrf .xtop{display:flex;flex-direction:column;align-items:stretch;gap:6px}   /* v32: status on its own row, buttons below */
+.xrf .xst{font-weight:800;display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35}   /* one line; a long file name ends in … */
+.xrf .xbtns{display:flex;flex-wrap:wrap;gap:6px}
+.xrf .xbtns .btn{width:auto;flex:0 0 auto;margin-top:0;white-space:nowrap}
 .xrf .xst.on{color:var(--green)}.xrf .xst.off{color:var(--red)}.xrf .xst.pause{color:var(--brown)}
 .xrf .btn.sm{min-height:36px;padding:6px 10px;font-size:14px}
+.xrf .xlast,.xrf .xwarn,.xrf .xnote{overflow-wrap:break-word}
+.xrf .xgap{display:flex;align-items:flex-start;gap:8px;margin-top:8px;padding:8px 10px;border:2px solid var(--red);border-radius:10px;background:#fff;color:var(--red);font-weight:800;overflow-wrap:break-word}
+.xrf .xgap span{flex:1;min-width:0}
+.xrf .xgap .xgx{flex:none;border:0;background:var(--red);color:#fff;font-weight:900;font-size:18px;line-height:1;width:32px;height:32px;border-radius:8px;cursor:pointer}
 .xrf .xlast{margin-top:6px;font-weight:700;color:#3d2c00}
 .xrf .xwarn{margin-top:6px;font-weight:700;color:var(--red)}
 .xrf .xnote{margin-top:6px;font-weight:700;color:var(--blue)}
@@ -360,7 +369,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -685,7 +694,7 @@ function qEdit(r) {
   if (inflight === r) return toast('Sending this one now. Try again in a moment.');
   modal(`<h2>Edit unsynced purchase</h2>${it.error ? `<div class="banner err">${esc(it.error)}</div>` : ''}
     <div class="row2"><div><label for="qw">Weight (BHY)</label><input id="qw" type="text" inputmode="decimal" value="${esc(it.weightBhy)}"></div>
-    <div><label for="qpp">Purity %</label><input id="qpp" type="text" inputmode="decimal" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
+    <div><label for="qpp">Purity %</label><input id="qpp" class="pur" type="text" inputmode="decimal" placeholder="%" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
     <label for="qc">Cost (₱)</label><input id="qc" type="text" inputmode="decimal" value="${esc(it.cost)}">
     <label for="qd">Date</label><input id="qd" type="date" value="${esc(it.date)}">
     <button class="btn" id="qsave">Save &amp; sync</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
@@ -956,7 +965,7 @@ async function xrfPoll(force) {
     if (!B) { XRF.tail = false; mark(all.length); xrfLog('connected: ' + all.length + ' old row(s) ignored'); return xrfPaint(); }
     // the line we last stopped at may have grown (its line end arrived later): same line, not a restart
     if (B.header && (P.header !== B.header || all.length < B.n || (B.n && !all[B.n - 1].startsWith(B.line)))) {
-      XRF.tail = false; mark(all.length); XRF.note = 'File restarted: only readings taken from now on will be used.'; xrfLog('file restarted/replaced: ' + all.length + ' row(s), none used'); return xrfPaint();
+      XRF.tail = false; XRF.gp = null; mark(all.length); XRF.note = 'File restarted: only readings taken from now on will be used.'; xrfLog('file restarted/replaced: ' + all.length + ' row(s), none used'); return xrfPaint();
     }
     const fresh = all.slice(B.header ? B.n : 0);
     XRF.tail = P.tail && !acceptTail && fresh.length > 0; if (XRF.tail) fresh.pop();   // wait for an unfinished new line
@@ -978,6 +987,7 @@ function xrfTake(r) {   // one new row from the file
   if (!r.final) return;
   const prev = XRF.last;
   XRF.note = prev && r.no !== '' && prev.no !== '' && Number(r.no) < Number(prev.no) ? `Numbering reset on the XL2 (#${prev.no} → #${r.no}). This is still the latest reading.` : '';
+  xrfGapCheck(r);
   XRF.last = r;
   if (XRF.paused) { r.where = 'paused, not used'; return; }
   if (!r.ok) { r.where = 'not used'; XRF.warn = `Reading #${r.no}: Au is "${r.raw || 'blank'}", not a number. Nothing was filled.`; return; }
@@ -1002,11 +1012,30 @@ function xrfTake(r) {   // one new row from the file
   xrfLog('#' + r.no + ' → ' + r.where + ' (box ' + t + ', ' + view + ')');
   xrfFlash();
 }
+// v32: a reading the XL2 took that never reached NDTr shows up as a jump in Reading No (#5723 -> #5726).
+// Warn (not blocking; the new reading is still used) until dismissed or a reading comes in with no gap.
+// No warning for the first reading after connect, a lower number (numbering reset) or a jump over 50 (new start).
+const GAP_MAX = 50;
+function xrfGapCheck(r) {   // XRF.gp: the last reading number seen since this connect / reconnect / file restart
+  const isNo = v => /^\d+$/.test(String(v == null ? '' : v).trim()), p = XRF.gp; XRF.gp = r.no;
+  if (!isNo(p) || !isNo(r.no)) { XRF.gap = null; return; }
+  const a = Number(p), b = Number(r.no), miss = b - a - 1;
+  if (miss >= 1 && miss <= GAP_MAX) {
+    XRF.gaps = (XRF.gaps || 0) + 1;
+    XRF.gap = { txt: miss === 1 ? '#' + (a + 1) : '#' + (a + 1) + '–' + (b - 1), n: XRF.gaps };
+    xrfLog('gap: ' + XRF.gap.txt + ' missing');
+  } else {
+    if (miss > GAP_MAX) xrfLog('jump #' + a + ' → #' + b + ' (more than ' + GAP_MAX + '): taken as a new start, no warning');
+    XRF.gap = null;
+  }
+}
+function xrfGapX() { XRF.gap = null; xrfPaint(); }
 function xrfFlash() { const c = $('#qCell'); if (!c) return; c.classList.remove('xflash'); void c.offsetWidth; c.classList.add('xflash'); }
 function xrfPaint() { const b = $('#xrfBar'); if (b) b.innerHTML = xrfBarHTML(); }
 function xrfBarHTML() {
   const on = XRF.h && XRF.perm === 'granted';
-  const st = !XRF.h ? ['off', 'XRF not connected'] : !on ? ['off', 'XRF disconnected · ' + XRF.name] : XRF.paused ? ['pause', 'XRF paused · ' + XRF.name] : ['on', 'XRF connected · ' + XRF.name];
+  const st = !XRF.h ? ['off', 'XRF not connected'] : !on ? ['off', 'XRF disconnected'] : XRF.paused ? ['pause', 'XRF paused'] : ['on', 'XRF connected'];
+  const fn = XRF.h ? ` · <span class="xfn" id="xrfFile">${esc(XRF.name)}</span>` : '';
   const btn = !XRF.h ? `<button type="button" class="btn sm gold" id="xrfConnect" onclick="xrfConnect()">Connect XRF file</button>`
     : (!on ? `<button type="button" class="btn sm gold" id="xrfReconnect" onclick="xrfReconnect()">Reconnect</button>`
       : `<button type="button" class="btn sm light" id="xrfPause" aria-pressed="${XRF.paused}" onclick="xrfPause()">${XRF.paused ? '▶ Resume' : '⏸ Pause'}</button>`)
@@ -1017,9 +1046,9 @@ function xrfBarHTML() {
     : on ? `<div class="xlast" id="xrfLast">Waiting for the next reading…</div>` : '';
   const arm = on && QMODE === 'batch' ? `<div class="xarm"><button type="button" class="btn sm light" id="xrfArmRep" aria-pressed="${XRF.arm === 'replace'}" onclick="xrfArm('replace')">↺ Replace last row</button><button type="button" class="btn sm light" id="xrfArmSingle" aria-pressed="${XRF.arm === 'single'}" onclick="xrfArm('single')">Next reading: Single</button></div>` : '';
   const back = on && XRF.back && QMODE === 'single' ? `<div class="xnote" id="xrfBack">The next reading goes back to the batch.</div>` : '';
-  return `<div class="xtop"><span class="xst ${st[0]}" id="xrfStatus">${esc(st[1])}</span>${btn}</div>${last}${XRF.warn ? `<div class="xwarn" id="xrfWarn">⚠ ${esc(XRF.warn)}</div>` : ''}${XRF.note ? `<div class="xnote" id="xrfNote">${esc(XRF.note)}</div>` : ''}${back}${arm}`;
+  return `<div class="xtop"><div class="xst ${st[0]}" id="xrfStatus"${XRF.h ? ` title="${esc(XRF.name)}"` : ''}><span class="xlab">${esc(st[1])}</span>${fn}</div><div class="xbtns">${btn}</div></div>${last}${XRF.gap ? `<div class="xgap" id="xrfGap" role="status"><span>⚠ ${esc(XRF.gap.txt)} never arrived. Check NDTr / the XL2 (Download › Query Readings)${XRF.gap.n > 1 ? ` · ${XRF.gap.n} gaps since connecting` : ''}</span><button type="button" class="xgx" id="xrfGapX" aria-label="Dismiss the missing reading warning" title="Dismiss" onclick="xrfGapX()">×</button></div>` : ''}${XRF.warn ? `<div class="xwarn" id="xrfWarn">⚠ ${esc(XRF.warn)}</div>` : ''}${XRF.note ? `<div class="xnote" id="xrfNote">${esc(XRF.note)}</div>` : ''}${back}${arm}`;
 }
-function xrfReset() { Object.assign(XRF, { base: null, stamp: '', text: null, n: 0, tail: false, warn: '', note: '', fails: 0, busy: 0 }); }
+function xrfReset() { Object.assign(XRF, { gap: null, gaps: 0, gp: null, base: null, stamp: '', text: null, n: 0, tail: false, warn: '', note: '', fails: 0, busy: 0 }); }
 async function xrfConnect() {
   let h; try { [h] = await window.showOpenFilePicker({ types: [{ description: 'XRF readings (CSV)', accept: { 'text/csv': ['.csv'] } }], multiple: false }); } catch (e) { return; }   // cancelled
   if (!h) return;
@@ -1060,7 +1089,7 @@ function buyHTML() {
   return `<div class="two"><div class="card"><h2>New purchase <span class="muted" id="nextNo">${esc(nextNoTxt())}</span></h2>
     <div class="row2">
       <div><label for="bw">Weight (BHY)</label><input id="bw" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.weightBhy)}" placeholder="0.00"></div>
-      <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.purity)}" placeholder="85.35"></div>
+      <div><label for="bp">Purity % <span class="hint">85.35 or 0.8535</span></label><input id="bp" class="pur" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(d.purity)}" placeholder="%"></div>
     </div>
     <div class="pnote${qPre && d.purity === qPre ? '' : ' hidden'}" id="pnote">From quote ${esc(qPre)}% · <button type="button" class="linkbtn" id="pclear">clear</button></div>
     <div id="bhint"></div>
@@ -1196,7 +1225,7 @@ function bbRowHTML(r, i) {
       <button type="button" class="x" aria-label="Remove row ${i + 1}" title="Remove row" onclick="bbDel(${i})">✕</button></div>
     <div class="row3"><div class="row2">
       <div><label for="bbw${i}">Weight (BHY)</label><input id="bbw${i}" data-f="w" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.weightBhy)}" placeholder="0.00"></div>
-      <div><label for="bbp${i}">Purity %</label><input id="bbp${i}" data-f="p" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.purity)}" placeholder="85.35"></div></div>
+      <div><label for="bbp${i}">Purity %</label><input id="bbp${i}" class="pur" data-f="p" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.purity)}" placeholder="%"></div></div>
       <div><label for="bbc${i}">Cost (₱)</label><input id="bbc${i}" data-f="c" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.cost)}" placeholder="0.00">
       <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : String(amt)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${peso0(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
     ${r.err ? `<div class="bberr">${esc(r.err)}</div>` : ''}</div>`;
@@ -1387,7 +1416,7 @@ function editItem(no) {
   const it = stockItem(no); if (!it) return;
   modal(`<h2>Edit #${esc(dno(it))}</h2>
     <div class="row2"><div><label for="ew">Weight (BHY)</label><input id="ew" type="text" inputmode="decimal" value="${esc(it.weightBhy)}"></div>
-    <div><label for="ep">Purity %</label><input id="ep" type="text" inputmode="decimal" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
+    <div><label for="ep">Purity %</label><input id="ep" class="pur" type="text" inputmode="decimal" placeholder="%" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
     <label for="ec">Cost (₱)</label><input id="ec" type="text" inputmode="decimal" value="${esc(it.cost)}">
     <label for="ed">Date</label><input id="ed" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : '')}">
     <button class="btn" id="esave">Save changes</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
