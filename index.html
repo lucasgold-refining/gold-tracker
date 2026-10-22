@@ -360,7 +360,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -888,7 +888,11 @@ function bqMoveOut(i) {   // take a row out of the batch and quote it on its own
   toast(`${pct(p)} moved out to a single quote`);
 }
 const xrfOK = () => typeof window.showOpenFilePicker === 'function' && !matchMedia('(pointer:coarse)').matches;
-const XRF = { h: null, name: '', perm: '', paused: !!load(XP_KEY), base: null, stamp: '', tail: false, last: null, warn: '', note: '', arm: '', back: false, busy: 0, fails: 0 };
+const XRF = { h: null, name: '', perm: '', paused: !!load(XP_KEY), base: null, stamp: '', text: null, n: 0, tail: false, last: null, warn: '', note: '', arm: '', back: false, busy: 0, fails: 0 };
+// v31: a short log of what the file watcher saw (Copy XRF log on the bar), to tell "no new row in the file" from "row not used"
+const XL_KEY = 'gold-tracker-xrflog'; let XLOG = load(XL_KEY) || [];
+function xrfLog(m) { const d = new Date(); XLOG.push(d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0') + ' ' + m); if (XLOG.length > 80) XLOG = XLOG.slice(-80); save(XL_KEY, XLOG); }
+function xrfCopyLog() { const t = 'Gold Tracker v' + APP_VERSION + ' XRF log\n' + XLOG.join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('XRF log copied. Paste it in the chat.'), () => { prompt('Copy this XRF log:', t); }); }
 const xrfStore = window.__xrfStore || {   // the file handle survives reloads in IndexedDB (permission is asked again)
   db() { return new Promise((res, rej) => { const r = indexedDB.open('gold-tracker-xrf', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
   async get() { const d = await this.db(); return new Promise((res, rej) => { const q = d.transaction('h').objectStore('h').get('file'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
@@ -934,27 +938,35 @@ async function xrfPoll(force) {
     const f = await XRF.h.getFile(), stamp = f.lastModified + ':' + f.size;
     if (!cur()) return;
     if (/not updating/.test(XRF.warn)) { XRF.warn = ''; xrfPaint(); }   // the file answers again
-    if (!force && stamp === XRF.stamp && !XRF.tail) { XRF.fails = 0; return; }   // unchanged since the last good read
-    const acceptTail = stamp === XRF.stamp && XRF.tail;                  // an unfinished last line that stayed put = complete
+    // v31: size + time unchanged is not trusted on its own (Windows can report them late while Live Download keeps the
+    // file open), so the text itself is also compared every 2nd second
+    const deep = force || ++XRF.n % 2 === 0;
+    if (!deep && stamp === XRF.stamp && !XRF.tail) { XRF.fails = 0; return; }   // unchanged since the last good read
     const text = await f.text(); if (!cur()) return;
+    const same = XRF.text !== null && text === XRF.text;
+    if (stamp !== XRF.stamp || !same) xrfLog('file ' + f.size + ' B, ' + (stamp === XRF.stamp ? 'size/time unchanged but text changed' : 'changed'));
+    const acceptTail = same && XRF.tail;                                 // an unfinished last line that stayed put = complete
     XRF.stamp = stamp; XRF.fails = 0;   // only after a good read: a failed read (file locked a moment) is tried again
+    if (same && !force && !XRF.tail) return;                             // same text as last time: nothing new
+    XRF.text = text;
     const P = xrfParse(text), all = P.rows, B = XRF.base;
     if (P.cols && P.cols.au < 0) XRF.warn = 'This file has no Au column. Pick the Live Download CSV.';
     const mark = n => { XRF.base = { n, header: P.header, line: all[n - 1] || '' }; };
     // just connected: everything already in the file (even an unfinished last line) is old and never fills
-    if (!B) { XRF.tail = false; mark(all.length); return xrfPaint(); }
+    if (!B) { XRF.tail = false; mark(all.length); xrfLog('connected: ' + all.length + ' old row(s) ignored'); return xrfPaint(); }
     // the line we last stopped at may have grown (its line end arrived later): same line, not a restart
     if (B.header && (P.header !== B.header || all.length < B.n || (B.n && !all[B.n - 1].startsWith(B.line)))) {
-      XRF.tail = false; mark(all.length); XRF.note = 'File restarted: only readings taken from now on will be used.'; return xrfPaint();
+      XRF.tail = false; mark(all.length); XRF.note = 'File restarted: only readings taken from now on will be used.'; xrfLog('file restarted/replaced: ' + all.length + ' row(s), none used'); return xrfPaint();
     }
     const fresh = all.slice(B.header ? B.n : 0);
     XRF.tail = P.tail && !acceptTail && fresh.length > 0; if (XRF.tail) fresh.pop();   // wait for an unfinished new line
     mark((B.header ? B.n : 0) + fresh.length);
+    if (fresh.length || XRF.tail) xrfLog(fresh.length + ' new row(s)' + (XRF.tail ? ', last line unfinished (waiting)' : ''));
     fresh.forEach(l => xrfTake(xrfRow(l, P.cols)));   // new rows, oldest first
     xrfPaint();
   } catch (e) {
     if (!cur()) return;
-    const n = e && e.name;
+    const n = e && e.name; xrfLog('read failed: ' + (n || e));
     if (n === 'NotAllowedError' || n === 'SecurityError') { XRF.perm = 'prompt'; XRF.warn = 'XRF file not updating: permission was lost. Tap Reconnect.'; }
     else if (n === 'NotFoundError') XRF.warn = 'XRF file not updating: the file was moved or deleted. Connect it again.';
     else if (++XRF.fails >= 3) XRF.warn = 'XRF file not updating: the file can\'t be read. Check Live Download, or reconnect.';
@@ -962,6 +974,7 @@ async function xrfPoll(force) {
   } finally { if (cur()) XRF.busy = 0; }
 }
 function xrfTake(r) {   // one new row from the file
+  xrfLog('row #' + r.no + ' Au ' + (r.raw || '?') + ' ' + (r.final ? 'Final' : 'not Final, skipped'));
   if (!r.final) return;
   const prev = XRF.last;
   XRF.note = prev && r.no !== '' && prev.no !== '' && Number(r.no) < Number(prev.no) ? `Numbering reset on the XL2 (#${prev.no} → #${r.no}). This is still the latest reading.` : '';
@@ -986,6 +999,7 @@ function xrfTake(r) {   // one new row from the file
     } else { bqPush(p, lab); r.where = 'batch row ' + BQ.length; }
     XRF.arm = '';
   } else { r.where = 'quote'; XRF.arm = ''; }
+  xrfLog('#' + r.no + ' → ' + r.where + ' (box ' + t + ', ' + view + ')');
   xrfFlash();
 }
 function xrfFlash() { const c = $('#qCell'); if (!c) return; c.classList.remove('xflash'); void c.offsetWidth; c.classList.add('xflash'); }
@@ -996,7 +1010,8 @@ function xrfBarHTML() {
   const btn = !XRF.h ? `<button type="button" class="btn sm gold" id="xrfConnect" onclick="xrfConnect()">Connect XRF file</button>`
     : (!on ? `<button type="button" class="btn sm gold" id="xrfReconnect" onclick="xrfReconnect()">Reconnect</button>`
       : `<button type="button" class="btn sm light" id="xrfPause" aria-pressed="${XRF.paused}" onclick="xrfPause()">${XRF.paused ? '▶ Resume' : '⏸ Pause'}</button>`)
-      + `<button type="button" class="btn sm light" id="xrfChange" onclick="xrfConnect()">Change file</button>`;
+      + `<button type="button" class="btn sm light" id="xrfChange" onclick="xrfConnect()">Change file</button>`
+      + `<button type="button" class="btn sm light" id="xrfLogBtn" title="Copy what the XRF link saw, to send for checking" onclick="xrfCopyLog()">Copy log</button>`;
   const L = XRF.last;
   const last = L ? `<div class="xlast" id="xrfLast">Last: Au ${L.ok ? xrfAuTxt(L.au) + '%' : esc(L.raw || '—')} · #${esc(L.no)} · ${esc(L.time)}${L.where ? ' → ' + esc(L.where) : ''}</div>`
     : on ? `<div class="xlast" id="xrfLast">Waiting for the next reading…</div>` : '';
@@ -1004,7 +1019,7 @@ function xrfBarHTML() {
   const back = on && XRF.back && QMODE === 'single' ? `<div class="xnote" id="xrfBack">The next reading goes back to the batch.</div>` : '';
   return `<div class="xtop"><span class="xst ${st[0]}" id="xrfStatus">${esc(st[1])}</span>${btn}</div>${last}${XRF.warn ? `<div class="xwarn" id="xrfWarn">⚠ ${esc(XRF.warn)}</div>` : ''}${XRF.note ? `<div class="xnote" id="xrfNote">${esc(XRF.note)}</div>` : ''}${back}${arm}`;
 }
-function xrfReset() { Object.assign(XRF, { base: null, stamp: '', tail: false, warn: '', note: '', fails: 0, busy: 0 }); }
+function xrfReset() { Object.assign(XRF, { base: null, stamp: '', text: null, n: 0, tail: false, warn: '', note: '', fails: 0, busy: 0 }); }
 async function xrfConnect() {
   let h; try { [h] = await window.showOpenFilePicker({ types: [{ description: 'XRF readings (CSV)', accept: { 'text/csv': ['.csv'] } }], multiple: false }); } catch (e) { return; }   // cancelled
   if (!h) return;
@@ -1029,8 +1044,13 @@ function xrfInit() {
     if (XRF.perm === 'granted') await xrfPoll(true);
     xrfPaint();
   }).catch(() => {});
-  setInterval(() => xrfPoll(), 1000);
+  // v31: the 1-second tick comes from a worker. Chrome slows page timers to once a MINUTE when the window has been
+  // covered (e.g. by NDTr) for a while, which made a new reading show up late, as if the old one stayed.
+  let w = null; try { w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 1000)'], { type: 'text/javascript' }))); w.onmessage = () => xrfPoll(); XRF.tick = 'worker'; } catch (e) { w = null; }
+  if (!w) { setInterval(() => xrfPoll(), 1000); XRF.tick = 'timer'; }
+  xrfLog('app v' + APP_VERSION + ' open, tick: ' + XRF.tick);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') xrfPoll(); });
+  window.addEventListener('focus', () => xrfPoll());
 }
 
 // Buy
