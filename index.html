@@ -330,7 +330,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -705,8 +705,9 @@ let QMODE = load(QM_KEY) === 'batch' ? 'batch' : 'single';
 const modeToggleHTML = () => `<div class="seg two2" role="group" aria-label="Quote mode" id="modeSeg">${[['single', 'Single'], ['batch', 'Batch']].map(([m, t]) =>
   `<button type="button" data-mode="${m}" aria-pressed="${QMODE === m}" onclick="setMode('${m}')">${t}</button>`).join('')}</div>`;
 function setMode(m) {
-  if (m !== 'single' && m !== 'batch' || m === QMODE) return;
-  QMODE = m; save(QM_KEY, m);
+  if (m !== 'single' && m !== 'batch') return;
+  if (m === QMODE) { if (XRF.back) { XRF.back = false; xrfPaint(); } return; }   // tapping Single again = stay on Single
+  QMODE = m; save(QM_KEY, m); XRF.arm = ''; XRF.back = false;   // a switch by hand cancels the XRF one-shots
   if (view === 'quote') { const y = window.scrollY; render(); window.scrollTo(0, y); focusQuote(); }
 }
 function setDed(v) {
@@ -851,23 +852,31 @@ function bqMoveOut(i) {   // take a row out of the batch and quote it on its own
   toast(`${pct(p)} moved out to a single quote`);
 }
 const xrfOK = () => typeof window.showOpenFilePicker === 'function' && !matchMedia('(pointer:coarse)').matches;
-const XRF = { h: null, name: '', perm: '', paused: !!load(XP_KEY), base: null, stamp: '', tail: false, last: null, warn: '', note: '', arm: '', back: false, busy: false, fails: 0 };
+const XRF = { h: null, name: '', perm: '', paused: !!load(XP_KEY), base: null, stamp: '', tail: false, last: null, warn: '', note: '', arm: '', back: false, busy: 0, fails: 0 };
 const xrfStore = window.__xrfStore || {   // the file handle survives reloads in IndexedDB (permission is asked again)
   db() { return new Promise((res, rej) => { const r = indexedDB.open('gold-tracker-xrf', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
   async get() { const d = await this.db(); return new Promise((res, rej) => { const q = d.transaction('h').objectStore('h').get('file'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
   async put(h) { const d = await this.db(); return new Promise((res, rej) => { const t = d.transaction('h', 'readwrite'); t.objectStore('h').put(h, 'file'); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
 };
-const xrfSplit = line => line.split(',').map(c => c.trim());
+function xrfSplit(line) {   // CSV fields, trimmed; a "quoted, field" stays one field
+  const o = []; let c = '', q = false;
+  for (let i = 0; i < line.length; i++) { const ch = line[i];
+    if (q) { if (ch !== '"') c += ch; else if (line[i + 1] === '"') { c += '"'; i++; } else q = false; }
+    else if (ch === '"') q = true; else if (ch === ',') { o.push(c.trim()); c = ''; } else c += ch; }
+  o.push(c.trim()); return o;
+}
 function xrfParse(text) {   // -> header text, column positions (by exact name), data lines, and whether the last line is unfinished
   const lines = String(text).split(/\r?\n/); let tail = false;
   if (lines[lines.length - 1] === '') lines.pop(); else tail = true;
   const L = lines.filter(l => l.trim() !== '');
   if (!L.length) return { header: '', cols: null, rows: [], tail: false };
   const H = xrfSplit(L[0]), ix = n => H.findIndex(h => h.toLowerCase() === n.toLowerCase());
-  return { header: H.join(','), cols: { au: ix('Au'), no: ix('Reading No'), time: ix('Time'), idx: ix('Index'), seq: ix('Sequence'), units: ix('Units') }, rows: L.slice(1), tail: tail && L.length > 1 };
+  const free = Math.max(...['SAMPLE', 'HEAT', 'LOT', 'BATCH', 'MISC', 'NOTE', 'Flags'].map(ix));   // typed / flag text, before the elements
+  return { header: H.join(','), cols: { au: ix('Au'), no: ix('Reading No'), time: ix('Time'), idx: ix('Index'), seq: ix('Sequence'), units: ix('Units'), n: H.length, free }, rows: L.slice(1), tail: tail && L.length > 1 };
 }
 function xrfRow(line, c) {
-  const v = xrfSplit(line), g = i => i >= 0 && i < v.length ? v[i] : '';
+  const v = xrfSplit(line), d = c.n && c.free >= 0 ? v.length - c.n : 0;   // an unquoted comma in a note/flag: element columns counted from the end
+  const g = i => { if (d > 0 && i > c.free) i += d; return i >= 0 && i < v.length ? v[i] : ''; };
   const raw = g(c.au), units = g(c.units), t = g(c.time);
   let au = /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
   if (!isNaN(au) && /ppm/i.test(units)) au = +(au / 10000).toFixed(6);
@@ -879,34 +888,42 @@ const xrfAuTxt = au => Number(xrfCut(au).replace('%', '')).toFixed(2);
 // The purity text as the box expects it: 85.735 (percent). Below 1% add "%" so it is not read as a fraction.
 const xrfBoxTxt = au => au <= 1 ? xrfCut(au) : xrfCut(au).replace('%', '');
 async function xrfPoll(force) {
-  if (!XRF.h || XRF.perm !== 'granted' || XRF.busy) return;
-  if (!force && document.visibilityState !== 'visible') return;
-  XRF.busy = true;
+  if (!XRF.h || XRF.perm !== 'granted') return;
+  if (XRF.busy) {   // a look that never came back (file held by Live Download / antivirus): drop it after 8 s, try again
+    if (Date.now() - XRF.busy < 8000) return;
+    XRF.warn = 'XRF file not updating: the file is busy. Check Live Download, or reconnect.'; xrfPaint();
+  }
+  const my = XRF.busy = Date.now(), cur = () => XRF.busy === my;
   try {
     const f = await XRF.h.getFile(), stamp = f.lastModified + ':' + f.size;
-    if (XRF.fails >= 3 || /not updating/.test(XRF.warn)) { XRF.warn = ''; xrfPaint(); }
-    XRF.fails = 0;
-    if (!force && stamp === XRF.stamp && !XRF.tail) return;            // unchanged since the last look
+    if (!cur()) return;
+    if (/not updating/.test(XRF.warn)) { XRF.warn = ''; xrfPaint(); }   // the file answers again
+    if (!force && stamp === XRF.stamp && !XRF.tail) { XRF.fails = 0; return; }   // unchanged since the last good read
     const acceptTail = stamp === XRF.stamp && XRF.tail;                  // an unfinished last line that stayed put = complete
-    XRF.stamp = stamp;
-    const P = xrfParse(await f.text());
-    let rows = P.rows; XRF.tail = P.tail && !acceptTail; if (XRF.tail) rows = rows.slice(0, -1);
+    const text = await f.text(); if (!cur()) return;
+    XRF.stamp = stamp; XRF.fails = 0;   // only after a good read: a failed read (file locked a moment) is tried again
+    const P = xrfParse(text), all = P.rows, B = XRF.base;
     if (P.cols && P.cols.au < 0) XRF.warn = 'This file has no Au column. Pick the Live Download CSV.';
-    const B = XRF.base, nb = { n: rows.length, header: P.header, line: rows[rows.length - 1] || '' };
-    XRF.base = nb;
-    if (!B) return xrfPaint();                                           // just connected: existing readings never fill
-    if (B.header && (P.header !== B.header || rows.length < B.n || (B.n && rows[B.n - 1] !== B.line))) {
-      XRF.note = 'File restarted: only readings taken from now on will be used.'; return xrfPaint();
+    const mark = n => { XRF.base = { n, header: P.header, line: all[n - 1] || '' }; };
+    // just connected: everything already in the file (even an unfinished last line) is old and never fills
+    if (!B) { XRF.tail = false; mark(all.length); return xrfPaint(); }
+    // the line we last stopped at may have grown (its line end arrived later): same line, not a restart
+    if (B.header && (P.header !== B.header || all.length < B.n || (B.n && !all[B.n - 1].startsWith(B.line)))) {
+      XRF.tail = false; mark(all.length); XRF.note = 'File restarted: only readings taken from now on will be used.'; return xrfPaint();
     }
-    rows.slice(B.header ? B.n : 0).forEach(l => xrfTake(xrfRow(l, P.cols)));   // new rows, oldest first
+    const fresh = all.slice(B.header ? B.n : 0);
+    XRF.tail = P.tail && !acceptTail && fresh.length > 0; if (XRF.tail) fresh.pop();   // wait for an unfinished new line
+    mark((B.header ? B.n : 0) + fresh.length);
+    fresh.forEach(l => xrfTake(xrfRow(l, P.cols)));   // new rows, oldest first
     xrfPaint();
   } catch (e) {
+    if (!cur()) return;
     const n = e && e.name;
     if (n === 'NotAllowedError' || n === 'SecurityError') { XRF.perm = 'prompt'; XRF.warn = 'XRF file not updating: permission was lost. Tap Reconnect.'; }
     else if (n === 'NotFoundError') XRF.warn = 'XRF file not updating: the file was moved or deleted. Connect it again.';
     else if (++XRF.fails >= 3) XRF.warn = 'XRF file not updating: the file can\'t be read. Check Live Download, or reconnect.';
     xrfPaint();
-  } finally { XRF.busy = false; }
+  } finally { if (cur()) XRF.busy = 0; }
 }
 function xrfTake(r) {   // one new row from the file
   if (!r.final) return;
@@ -932,7 +949,7 @@ function xrfTake(r) {   // one new row from the file
       const c = $('#bqCard'); if (c) c.innerHTML = bqHTML(); r.where = 'replaced row ' + BQ.length;
     } else { bqPush(p, lab); r.where = 'batch row ' + BQ.length; }
     XRF.arm = '';
-  } else r.where = 'quote';
+  } else { r.where = 'quote'; XRF.arm = ''; }
   xrfFlash();
 }
 function xrfFlash() { const c = $('#qCell'); if (!c) return; c.classList.remove('xflash'); void c.offsetWidth; c.classList.add('xflash'); }
@@ -951,7 +968,7 @@ function xrfBarHTML() {
   const back = on && XRF.back && QMODE === 'single' ? `<div class="xnote" id="xrfBack">The next reading goes back to the batch.</div>` : '';
   return `<div class="xtop"><span class="xst ${st[0]}" id="xrfStatus">${esc(st[1])}</span>${btn}</div>${last}${XRF.warn ? `<div class="xwarn" id="xrfWarn">⚠ ${esc(XRF.warn)}</div>` : ''}${XRF.note ? `<div class="xnote" id="xrfNote">${esc(XRF.note)}</div>` : ''}${back}${arm}`;
 }
-function xrfReset() { Object.assign(XRF, { base: null, stamp: '', tail: false, warn: '', note: '', fails: 0 }); }
+function xrfReset() { Object.assign(XRF, { base: null, stamp: '', tail: false, warn: '', note: '', fails: 0, busy: 0 }); }
 async function xrfConnect() {
   let h; try { [h] = await window.showOpenFilePicker({ types: [{ description: 'XRF readings (CSV)', accept: { 'text/csv': ['.csv'] } }], multiple: false }); } catch (e) { return; }   // cancelled
   if (!h) return;
