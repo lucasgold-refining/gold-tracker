@@ -145,6 +145,12 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 @keyframes xflash{0%{box-shadow:0 0 0 4px var(--gold2);background:var(--goldbg)}100%{box-shadow:none}}
 .bq .xno{display:block;font-size:12px;font-weight:600;color:var(--muted);overflow-wrap:anywhere}
 .bqmv{border:0;background:var(--goldbg);color:#3d2c00;border:1px solid var(--goldline);border-radius:10px;min-width:44px;min-height:44px;font-size:18px;font-weight:800;cursor:pointer;flex:none}
+.bkbox{margin-top:16px;padding:12px;border:2px solid var(--line);border-radius:12px;background:#fffdf6}
+.bkbox h3{margin:0 0 4px;font-size:16px}
+.bkbox .btn{margin-top:10px}
+.bkst{margin-top:8px;font-size:14px;font-weight:700;color:var(--muted);overflow-wrap:anywhere}
+.bkst.ok{color:var(--green)}.bkst.err{color:var(--red)}.bkst.warn{color:var(--brown)}.bkst.busy{color:var(--blue)}
+.bkwarn{color:var(--brown);font-weight:700}
 .linkbtn{border:0;background:none;padding:6px 4px;font:inherit;font-size:12px;color:#6b4f0e;text-decoration:underline;cursor:pointer}
 .chint{display:inline-block;border:0;background:none;padding:8px 2px;margin-top:2px;font:inherit;font-size:14px;color:#8f8771;cursor:pointer;text-align:left}
 .chint b{font-weight:600}
@@ -162,6 +168,7 @@ th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;whit
 th{font-size:13px;color:var(--muted);font-weight:700;text-align:center;background:#fbf8f0}
 td:first-child{text-align:left;font-weight:800;color:var(--brown)}
 td.acts{text-align:right;width:120px}
+@media (min-width:900px) and (max-width:1100px){#stockCard th,#stockCard td{padding:9px 4px;font-size:15px}#stockCard td.acts{width:auto}}   /* v28: narrow PC windows: Stock table fits */
 tr.tot td{font-weight:900;border-bottom:0;background:#fbf8f0}
 .tiles{display:grid;grid-template-columns:1fr;gap:12px}
 .tile{background:#fff;border-radius:14px;padding:16px;border:1px solid #efe9da;border-left:6px solid var(--gold);box-shadow:0 1px 3px rgba(0,0,0,.06)}
@@ -330,7 +337,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -532,10 +539,11 @@ function applyAdded(j, it) {
   if (!(no > 0)) return;
   let item = j.item && Number(j.item.no) === no ? j.item : null;
   if (!item) { const sell = s.base ? s.base * it.purity * it.weightBhy / bhy : null;
-    item = { no, date: it.date, weightBhy: it.weightBhy, grams: it.weightBhy / bhy, purity: it.purity, cost: it.cost,
+    item = { no, bno: j.bno != null ? j.bno : null, date: it.date, weightBhy: it.weightBhy, grams: it.weightBhy / bhy, purity: it.purity, cost: it.cost,
       projSell: sell == null ? null : round2(sell), projProfit: sell == null ? null : round2(sell - it.cost), status: 'In stock' }; }
   ST.stock = (ST.stock || []).filter(x => Number(x.no) !== no).concat([item]);
   ST.nextNo = Math.max(Number(ST.nextNo) || 0, no + 1);
+  const b = item.bno != null ? Number(item.bno) : null; if (b > 0 && ST.batchNos) ST.nextBno = Math.max(Number(ST.nextBno) || 0, b + 1);
   if (j.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.version));
   RECENT.push({ item, at: Date.now() }); save(CACHE_KEY, ST);
 }
@@ -609,14 +617,14 @@ async function syncQueue(opt) {
       if (it.uncertainAt && !it.force && Date.now() - it.uncertainAt > dedupeSafeMs()) {
         try { await api('getState'); gotState = true; } catch (e) { stopped = true; if (!e.net) netErr = e.message; break; }
         const m = stockMatch(it);
-        if (m) { qUpdate(r0, x => { x.hold = `May already be saved as #${m.no} (same date, weight, purity and cost). Check Stock, then delete this or tap Send anyway.`; }); continue; }
+        if (m) { qUpdate(r0, x => { x.hold = `May already be saved as #${dno(m)} (same date, weight, purity and cost). Check Stock, then delete this or tap Send anyway.`; }); continue; }
       }
       qUpdate(r0, x => { x.tries = (x.tries || 0) + 1; x.lastTry = Date.now(); });
       inflight = r0; softRender();
       try {
         const j = await api('addPurchase', { date: it.date, weightBhy: it.weightBhy, purity: it.purity, cost: it.cost, lite: true }, true, { rid: it.rid, timeout: 45000 });
         if (j.state) gotState = true; applyAdded(j, it);
-        qRemove(r0); done++; lastNo = j.no || (j.item && j.item.no) || null;   // ok, or duplicate rid = already saved
+        qRemove(r0); done++; lastNo = j.bno || (j.item && j.item.bno) || j.no || (j.item && j.item.no) || null;   // v28: Batch # when the sheet has it   // ok, or duplicate rid = already saved
       } catch (e) {
         if (e.net) { qUpdate(r0, x => { if (e.sent && !x.uncertainAt) x.uncertainAt = Date.now(); }); stopped = true; break; }
         if (e.auth) { netErr = e.message; stopped = true; break; }    // bad token: keep everything, fix in Settings
@@ -1016,7 +1024,7 @@ function buyHTML() {
     <div class="muted" style="margin-top:8px">${isOffline() ? 'Offline: saved on this device and sent to the sheet when the internet is back.' : 'Saved as In stock on the Purchases tab.'}</div></div>
     <div class="card desk-only"><h2>Last added</h2><div id="lastAdded">${lastAddedHTML()}</div></div></div>`;
 }
-const nextNoTxt = () => loadQ().length || isOffline() ? 'No. given when synced' : 'next #' + ST.nextNo;
+const nextNoTxt = () => loadQ().length || isOffline() ? 'No. given when synced' : 'next #' + (ST.batchNos && ST.nextBno != null ? ST.nextBno : ST.nextNo);
 function lastAddedHTML() {
   const L = (ST.stock || []).slice().sort((a, b) => (b.no || 0) - (a.no || 0)).slice(0, 6);
   loadQ(); return Q.length || L.length ? Q.slice().reverse().map(x => qRowHTML(x, ALWAYS_SHOWN)).join('') + L.map(x => itemRowHTML(x, ALWAYS_SHOWN)).join('') : '<div class="empty">No items in stock.</div>';
@@ -1267,12 +1275,16 @@ document.addEventListener('focusout', e => {
   const row = el.closest && el.closest('.bbrow'); if (row) row.classList.remove('active');
 });
 
+// v28: the number people see is the per-batch Batch # (restarts at 1 after each batch) when the sheet has it;
+// the real item No. (unique, never reused) stays the key for edit / delete / refine.
+const dno = it => it && it.bno != null && it.bno !== '' ? it.bno : (it ? it.no : '');
+const noHdr = () => ST && ST.batchNos ? 'Batch #' : 'No.';
 // Stock
 function itemRowHTML(it, g) {   // g: profit group (Stock list, or Buy's always-shown list)
   g = typeof g === 'string' ? g : 'stock:list';
-  return `<div class="item"><span class="no">#${esc(it.no)}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
+  return `<div class="item"><span class="no">#${esc(dno(it))}</span><div class="body"><b>${wt(it.weightBhy)} BHY</b> · ${pct(it.purity)}<br>
     <span class="muted">Cost ${peso(it.cost)} · Profit <b>${prof(it.projProfit, g)}</b></span></div>
-    <div class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
+    <div class="acts"><button class="ed" aria-label="Edit #${esc(dno(it))}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(dno(it))}" onclick="delItem(${Number(it.no)})">🗑️</button></div></div>`;
 }
 // Projected profit of an unsynced purchase from the cached base (same rule as the sheet: base × purity × grams).
 function qProfit(it) { const s = S(); return s && s.base ? s.base * it.purity * it.weightBhy / (s.bhyPerGram || 2) - it.cost : null; }
@@ -1311,9 +1323,9 @@ function stockHTML() {
   const pend = P.map(it => { const s = S(), sell = s && s.base ? s.base * it.purity * it.weightBhy / (s.bhyPerGram || 2) : null;
     return `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(sell)}</td><td><b>${prof(qProfit(it), 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button> <button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></td></tr>`; }).join('');
-  const table = `<table class="desk-only"><thead><tr><th>No.</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
-    ${L.map(it => `<tr><td>#${esc(it.no)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
-      <td class="acts"><button class="ed" aria-label="Edit #${esc(it.no)}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(it.no)}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}${pend}
+  const table = `<table class="desk-only"><thead><tr><th>${noHdr()}</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead><tbody>
+    ${L.map(it => `<tr><td>#${esc(dno(it))}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
+      <td class="acts"><button class="ed" aria-label="Edit #${esc(dno(it))}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(dno(it))}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`).join('')}${pend}
     <tr class="tot"><td>Total</td><td>${wt(tw)}</td><td></td><td>${peso(tc)}</td><td></td><td><b>${prof(tp, 'stock:list')}</b></td><td></td></tr></tbody></table>`;
   return queueHTML() + refineBtnHTML(L.length) + `
     <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${L.length} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn('stock:list')}</h2>
@@ -1325,7 +1337,7 @@ function closeModal() { const m = $('#modal'); if (m) { m.remove(); applyEye(); 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 function editItem(no) {
   const it = stockItem(no); if (!it) return;
-  modal(`<h2>Edit #${esc(no)}</h2>
+  modal(`<h2>Edit #${esc(dno(it))}</h2>
     <div class="row2"><div><label for="ew">Weight (BHY)</label><input id="ew" type="text" inputmode="decimal" value="${esc(it.weightBhy)}"></div>
     <div><label for="ep">Purity %</label><input id="ep" type="text" inputmode="decimal" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
     <label for="ec">Cost (₱)</label><input id="ec" type="text" inputmode="decimal" value="${esc(it.cost)}">
@@ -1340,7 +1352,8 @@ function editItem(no) {
 }
 async function delItem(no) {
   const it = stockItem(no); if (!it) return;
-  if (!confirm(`Delete #${no}?\n${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)}\n\nThis removes the row from the Purchases tab.`)) return;
+  if (!confirm(`Delete #${dno(it)}?\n${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)}\n\nThis removes the row from the Purchases tab.`)) return;
+  RECENT = RECENT.filter(x => Number(x.item.no) !== Number(no));   // a just-synced purchase must not come back after its delete
   const j = await write('deletePurchase', { no }); if (j) { render(); toast(safeMsg(j.message)); }
 }
 async function openRefine() {
@@ -1679,6 +1692,86 @@ async function saveBase() {
 }
 $('#basePill').onclick = openBase;
 
+// ---------- v28: local backup (Settings > Download backup) ----------
+// The sheet sends a full .xlsx copy (Api.gs v8 exportBackup). PC Chrome/Edge: saved in a folder picked once
+// (handle kept in IndexedDB, permission asked again when needed). Phones / other browsers: a normal download.
+const BK_KEY = 'gold-tracker-lastbackup';
+const bkDirOK = () => typeof window.showDirectoryPicker === 'function' && !matchMedia('(pointer:coarse)').matches;
+const BK = { h: null, perm: '', busy: false, msg: '', cls: '' };
+const bkStore = window.__bkStore || {
+  db() { return new Promise((res, rej) => { const r = indexedDB.open('gold-tracker-backup', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async get() { const d = await this.db(); return new Promise((res, rej) => { const q = d.transaction('h').objectStore('h').get('dir'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
+  async put(h) { const d = await this.db(); return new Promise((res, rej) => { const t = d.transaction('h', 'readwrite'); t.objectStore('h').put(h, 'dir'); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
+};
+const bkSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+function bkStamp(d) {   // Manila time: 2026-10-22 1330
+  const p = {}; new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(d || new Date()).forEach(x => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day} ${p.hour}${p.minute}`;
+}
+const bkName = (d, k) => `Gold Tracker backup ${bkStamp(d)}${k > 1 ? ` (${k})` : ''}.xlsx`;
+function bkBytes(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+function backupHTML() {
+  const last = load(BK_KEY), dir = bkDirOK();
+  const where = dir ? (BK.h ? `Backup folder: <b>${esc(BK.h.name)}</b>${BK.perm && BK.perm !== 'granted' ? ' <span class="bkwarn">(asks for permission on the next backup)</span>' : ''}` : 'No backup folder chosen yet: you pick one on the first backup.')
+    : 'Saved to this device\'s Downloads.';
+  return `<h3>💾 Backup</h3><div class="muted" id="bkWhere">${where}</div>
+    <button type="button" class="btn" id="bkGo" onclick="doBackup()"${BK.busy ? ' disabled' : ''}>${BK.busy ? 'Making backup…' : '⬇️ Download backup'}</button>
+    ${dir && BK.h ? `<button type="button" class="linkbtn" id="bkChange" onclick="bkPick()">Change folder</button>` : ''}
+    <div class="bkst ${BK.cls}" id="bkStatus" role="status">${BK.msg ? esc(BK.msg) : last ? `Last backup: ${esc(whenTxt(last.at))} · ${esc(bkSize(last.size))} · ${esc(last.name)}` : 'A full copy of the Gold Tracker sheet (.xlsx, opens in Google Sheets).'}</div>`;
+}
+function bkPaint() { const b = $('#bkBox'); if (b) b.innerHTML = backupHTML(); }
+function bkSet(msg, cls) { BK.msg = msg; BK.cls = cls || ''; bkPaint(); }
+async function bkPick() {
+  let h; try { h = await window.showDirectoryPicker({ id: 'gold-tracker-backup', mode: 'readwrite' }); } catch (e) { return null; }   // cancelled
+  BK.h = h; BK.perm = 'granted'; try { await bkStore.put(h); } catch (e) {}
+  bkPaint(); return h;
+}
+async function doBackup() {
+  if (BK.busy) return;
+  if (!connected()) return toast('Connect to the sheet first');
+  if (!navigator.onLine) return bkSet('Offline: a backup needs the internet. Nothing was saved.', 'err');
+  let dir = null;
+  if (bkDirOK()) {   // ask for the folder / permission first, while the tap still counts
+    if (!BK.h) { dir = await bkPick(); if (!dir) return bkSet('No folder chosen, so nothing was saved.', 'warn'); }
+    else {
+      dir = BK.h; let p = 'prompt';
+      try { p = await dir.queryPermission({ mode: 'readwrite' }); if (p !== 'granted') p = await dir.requestPermission({ mode: 'readwrite' }); } catch (e) { p = 'denied'; }
+      BK.perm = p;
+      if (p !== 'granted') return bkSet('Permission to the backup folder was not given, so nothing was saved. Tap again and choose Allow, or Change folder.', 'err');
+    }
+  }
+  BK.busy = true; bkSet('Getting a full copy from the sheet… (can take up to a minute)', 'busy');
+  try {
+    let j;
+    try { j = await api('exportBackup', null, false, { timeout: 150000 }); }
+    catch (e) { throw new Error(/Unknown action/.test(e.message) ? 'Your sheet\'s Api.gs is older than v8. Paste the new Api.gs and make a New version of the deployment.' : e.message); }
+    const bytes = bkBytes(j.data || '');
+    if (!bytes.length || (j.size && bytes.length !== j.size)) throw new Error('The backup arrived incomplete. Try again.');
+    const now = new Date(), mime = j.mime || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', blob = new Blob([bytes], { type: mime });
+    let name = bkName(now), where;
+    if (dir) {
+      for (let k = 2; k < 50; k++) { try { await dir.getFileHandle(name); name = bkName(now, k); } catch (e) { break; } }   // never overwrite an earlier backup
+      const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable();
+      await w.write(blob); await w.close();
+      where = `in the "${dir.name}" folder`;
+    } else {
+      const url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+      where = 'to Downloads';
+    }
+    save(BK_KEY, { at: now.toISOString(), size: bytes.length, name, where });
+    BK.busy = false; bkSet(`✓ Backup saved ${where}: ${name} (${bkSize(bytes.length)})`, 'ok'); toast('Backup saved ✓ (' + bkSize(bytes.length) + ')', 3500);
+  } catch (e) {
+    BK.busy = false; bkSet('✗ Backup failed: ' + (e.net ? (navigator.onLine ? e.message : OFFLINE_MSG) : e.message) + ' Nothing was saved.', 'err');
+  }
+}
+function bkInit() {
+  if (!bkDirOK()) return;
+  bkStore.get().then(async h => { if (!h || BK.h) return; BK.h = h; try { BK.perm = await h.queryPermission({ mode: 'readwrite' }); } catch (e) { BK.perm = 'prompt'; } bkPaint(); }).catch(() => {});
+}
+
 // Settings
 function openSettings() {
   modal(`<h2>⚙️ Settings</h2><div class="muted">Connect to the Gold Tracker sheet's web app. The setup text from Apps Script looks like <b>URL|token</b>; you can paste it whole into the URL box.</div>
@@ -1686,6 +1779,7 @@ function openSettings() {
     <label for="ct">Token</label><input id="ct" type="password" autocomplete="off" value="${esc(CFG.token)}">
     <button class="btn gold" id="csave">Save &amp; test</button>
     ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${peso(ST.base)} / g)</span></button>` : ''}
+    ${connected() ? `<div class="bkbox" id="bkBox">${backupHTML()}</div>` : ''}
     ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
     <button class="btn light" onclick="closeModal()">Close</button>
     <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(whenTxt(lastSync)) : ''}</div>`);
@@ -1730,7 +1824,7 @@ setInterval(() => {   // every 60 s: retry the queue, or check whether the sheet
   if (pendingQ().length) syncQueue(); else if (netDown) refresh(true);
 }, SYNC_EVERY_MS);
 document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
-render(); focusQuote(); xrfInit();
+render(); focusQuote(); xrfInit(); bkInit();
 setupFromHash().then(done => { if (connected()) { if (!done) refresh(true); else if (pendingQ().length) syncQueue(); } });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
