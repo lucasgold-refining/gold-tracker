@@ -330,7 +330,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -342,6 +342,10 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 // Money: rounded to the cent in decimal (1.005 -> 1.01, never "−₱0.00"), shown as #,##0.00.
 const round2 = n => { n = Number(n); const a = Math.abs(n), r = Number(Math.round(a + 'e2') + 'e-2'), v = Math.sign(n) * (isFinite(r) ? r : Math.round(a * 100) / 100); return v === 0 ? 0 : v; };   // half away from zero
 const num = n => round2(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// v26: quoted buy prices are cut down to a multiple of ₱5, no centavos (6983.47 -> 6980, 6985 -> 6985). Works in whole
+// centavos first (tiny float noise like 6984.999999 counts as 6985.00), so a price never drops a step by float error.
+const floor5 = n => { n = Number(n); if (!isFinite(n) || n <= 0) return 0; const c = Math.floor(Math.round(n * 1e6) / 1e4); return Math.floor(c / 500) * 5; };
+const peso0 = n => { if (n == null || n === '' || isNaN(n)) return '–'; return '₱' + Math.round(Number(n)).toLocaleString('en-GB'); };
 const peso = n => { if (n == null || n === '' || isNaN(n)) return '–'; const v = round2(n); return (v < 0 ? '−₱' : '₱') + num(Math.abs(v)); };
 const sgn = n => n == null ? '' : (round2(n) < 0 ? 'neg' : 'pos');
 // ---------- profit privacy, per tab (v16) ----------
@@ -436,18 +440,38 @@ function safeMsg(m, g) {
   return m;
 }
 function toast(msg, ms) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms || 2600); }
+const pTxt0 = p => String(+(Number(p) * 100).toFixed(4));
 function parseNum(v) { const s = String(v == null ? '' : v).replace(/[,\s%₱]|PHP/gi, ''); if (s === '') return null; const n = Number(s); return isFinite(n) ? n : NaN; }
-function toPurity(v) { // 85.35, 85.35% or 0.8535 -> 0.8535 (same as the sheet)
-  const s = String(v == null ? '' : v).trim(); if (s === '') return null;
+// v26: purity has at most 2 decimals (as a %), cut off, never rounded up: 85.739 -> 85.73. Done on the text,
+// so no float error (85.73 stays 85.73). A 0.xxxx fraction keeps 4 decimals (= 2 as a %); a "%" means percent.
+function purTrunc(v) {
+  const s = String(v == null ? '' : v), m = s.match(/^(\s*[+-]?)(\d*)(\.)(\d*)([\s\S]*)$/);
+  if (!m) return s;
+  const max = /%/.test(m[5]) || !(m[2] === '' || /^0+$/.test(m[2])) ? 2 : 4;
+  return m[4].length > max ? m[1] + m[2] + m[3] + m[4].slice(0, max) + m[5] : s;
+}
+const PUR_SEL = '#qp, #qpp, #bp, #ep, input[data-f="p"]';
+// Typing a 3rd decimal is not accepted (box and caret stay as they were); a paste or other change is cut to 2 decimals.
+document.addEventListener('beforeinput', e => { const el = e.target; if (el && el.matches && el.matches(PUR_SEL)) { el._pv = el.value; el._ps = [el.selectionStart, el.selectionEnd]; } }, true);
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !el.matches || !el.matches(PUR_SEL)) return;
+  const v = el.value, t = purTrunc(v); if (t === v) return;
+  if (e.inputType === 'insertText' && el._pv != null && purTrunc(el._pv) === el._pv) { el.value = el._pv; try { el.setSelectionRange(el._ps[0], el._ps[1]); } catch (x) {} return; }
+  const c = el.selectionStart; el.value = t;
+  try { const k = Math.max(0, Math.min(t.length, (c == null ? t.length : c) - (v.length - t.length))); el.setSelectionRange(k, k); } catch (x) {}
+}, true);
+function toPurity(v) { // 85.35, 85.35% or 0.8535 -> 0.8535 (same as the sheet); more decimals are cut off (v26)
+  const s = purTrunc(String(v == null ? '' : v).trim()); if (s === '') return null;
   let n = parseNum(s); if (n === null || isNaN(n)) return NaN;
   if (/%$/.test(s) || n > 1) n = n / 100;
+  n = Math.round(n * 10000) / 10000;   // whole hundredths of a % (the text is already cut): 85.73 and 0.8573 give the same number
   return (n > 0 && n <= 1) ? n : NaN;
 }
 
 // ---------- config + cached state ----------
 let CFG = load(CFG_KEY) || { url: '', token: '' };
 let ST = load(CACHE_KEY);           // last state from the sheet (works offline for quotes)
-let BQ = load(BQ_KEY) || [];         // batch quote purities
+let BQ = (load(BQ_KEY) || []).map(p => { const t = toPurity(pTxt0(p) + "%"); return t > 0 ? t : p; });         // batch quote purities
 let lastSync = ST && ST._syncedAt ? ST._syncedAt : null, netErr = '', busy = false;
 let netDown = false;                 // last request could not reach the sheet
 const isOffline = () => !navigator.onLine || netDown;
@@ -630,7 +654,7 @@ function qEdit(r) {
     <label for="qd">Date</label><input id="qd" type="date" value="${esc(it.date)}">
     <button class="btn" id="qsave">Save &amp; sync</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   $('#qsave').onclick = () => {
-    const w = parseNum($('#qw').value), p = toPurity($('#qpp').value), c = parseNum($('#qc').value), d = $('#qd').value;
+    const w = parseNum($('#qw').value), p = $('#qpp').value === String(+(it.purity * 100).toFixed(4)) ? Number(it.purity) : toPurity($('#qpp').value), c = parseNum($('#qc').value), d = $('#qd').value;
     if (!(w > 0)) return toast('Enter the weight in BHY'); if (p === null || isNaN(p)) return toast('Enter a valid purity'); if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('Pick the date');
     qUpdate(r, x => { x.weightBhy = w; x.purity = p; x.cost = c; x.date = d; x.error = ''; x.hold = ''; });
@@ -668,7 +692,7 @@ function quoteFor(p, m) {
   if (m == null) m = DED;
   const bhy = s.bhyPerGram || 2, full = isFullPurity(p, s);
   const perGram = full ? s.base : Math.max(0, s.base * (p - m));
-  return { perGram, perBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
+  return { perGram: floor5(perGram), perBhy: floor5(perGram / bhy), rawGram: perGram, rawBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
 }
 const ruleTxt = q => { const s = S(); return q.full ? `Full base (${pct(s.fullMin).replace(/0+%$/, '%').replace(/\.%$/, '%')} and up)` : `Base × (purity − ${dedTxt(q.m != null ? q.m : DED)})`; };
 const dedToggleHTML = () => `<div class="seg" role="group" aria-label="Purity deduction" id="dedSeg">${DED_OPTS.map(v =>
@@ -752,18 +776,18 @@ function qOutHTML(v) {
   if (isNaN(p)) return `<div class="quote"><div class="lbl">Buy price per BHY</div><div class="price" style="font-size:22px">Enter a purity like 87.1 or 0.871</div></div>`;
   const q = quoteFor(p);
   // Batch mode: one compact live line, so the batch list stays the main thing on screen.
-  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${pct(p)} → <b id="qPrice">${peso(q.perBhy)}</b> / BHY${offTxt()}</div>`;
+  if (QMODE === 'batch') return `<div class="qmini" id="qMini">${pct(p)} → <b id="qPrice">${peso0(q.perBhy)}</b> / BHY${offTxt()}</div>`;
   return `<div class="quote"><div class="lbl">Buy price per BHY · ${pct(p)}</div>
-    <div class="price" id="qPrice">${peso(q.perBhy)}</div>
+    <div class="price" id="qPrice">${peso0(q.perBhy)}</div>
     <div class="fine" id="qFine">Reference per BHY <b id="qRef">${peso(q.refBhy)}</b> · <span id="qRule">${ruleTxt(q)}</span></div>
-    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso(q.perGram)}</b></div></div>${offTxt()}
+    <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso0(q.perGram)}</b></div></div>${offTxt()}
     <button type="button" class="btn buythis" id="qbuy" onclick="quoteToBuy(${p})">🛒 Buy this</button></div>`;
 }
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(whenTxt(lastSync))}</div>` : '';
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
   const rows = BQ.map((p, i) => { const q = quoteFor(p), x = bqLabel(i); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}${x ? `<span class="xno">XRF #${esc(x.no)}${x.time ? ' · ' + esc(x.time) : ''}</span>` : ''}</span>
-    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span>${xrfOK() ? `<button class="bqmv" aria-label="Move ${pct(p)} out to a single quote" title="Move out to a single quote" onclick="bqMoveOut(${i})">⤴</button>` : ''}<button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
+    <span class="v">${q ? peso0(q.perBhy) : '₱—'}<small>per BHY</small></span>${xrfOK() ? `<button class="bqmv" aria-label="Move ${pct(p)} out to a single quote" title="Move out to a single quote" onclick="bqMoveOut(${i})">⤴</button>` : ''}<button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
   return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}${QMODE === 'batch' ? `<button type="button" class="btn bball" id="bqBuyAll" onclick="buyAll()">🛒 Buy all ${BQ.length} item${BQ.length === 1 ? '' : 's'}</button>` : ''}`;
 }
 // Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
@@ -848,9 +872,10 @@ function xrfRow(line, c) {
   return { au, raw, no: g(c.no), idx: g(c.idx), time: (t.match(/(\d{1,2}:\d{2})(:\d{2})?\s*$/) || [])[1] || t,
     final: c.seq < 0 || /^final$/i.test(g(c.seq)), ok: !isNaN(au) && au > 0 && au <= 100 };
 }
-const xrfAuTxt = au => (Math.round(au * 100 + 1e-6) / 100).toFixed(2);
+const xrfCut = au => purTrunc(String(+au.toFixed(4)) + '%');   // "85.73%" (cut, never rounded up)
+const xrfAuTxt = au => Number(xrfCut(au).replace('%', '')).toFixed(2);
 // The purity text as the box expects it: 85.735 (percent). Below 1% add "%" so it is not read as a fraction.
-const xrfBoxTxt = au => String(+au.toFixed(4)) + (au <= 1 ? '%' : '');
+const xrfBoxTxt = au => au <= 1 ? xrfCut(au) : xrfCut(au).replace('%', '');
 async function xrfPoll(force) {
   if (!XRF.h || XRF.perm !== 'granted' || XRF.busy) return;
   if (!force && document.visibilityState !== 'visible') return;
@@ -1011,16 +1036,16 @@ function clearPre() {
 function quoteAmount() {
   const bp = $('#bp'), bw = $('#bw'); if (!bp || !bw) return null;
   const p = toPurity(bp.value), w = parseNum(bw.value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;
-  return q && w > 0 ? round2(q.perBhy * w) : null;
+  return q && w > 0 ? floor5(q.perBhy * w) : null;
 }
 function buyHint() {
   const el = $('#bhint'); if (!el) return;
   const p = toPurity($('#bp').value), w = parseNum($('#bw').value), q = p && !isNaN(p) ? quoteFor(p, DED) : null;   // same deduction as the Quote tab
   const n = $('#pnote'); if (n) n.classList.toggle('hidden', !(qPre && $('#bp').value === qPre));
   const ch = $('#chint'), amt = quoteAmount();
-  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : amt.toFixed(2); }
+  if (ch) { ch.classList.toggle('hidden', amt == null); ch.innerHTML = amt == null ? '' : `Quote: <b>${peso0(amt)}</b> <span aria-hidden="true">· tap to use</span>`; ch.dataset.amt = amt == null ? '' : String(amt); }
   if (!q) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="calc">Quote at ${pct(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${peso(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso(q.perBhy * w)}</b>` : ''}</div>`;
+  el.innerHTML = `<div class="calc">Quote at ${pct(p)}${q.full ? '' : ' (−' + dedTxt(DED) + ')'}: <b>${peso0(q.perBhy)}</b> / BHY${w > 0 ? ` · for ${wt(w)} BHY: <b>${peso0(floor5(q.perBhy * w))}</b>` : ''}</div>`;
 }
 function bindBuy() {
   if (!$('#bsave')) return;
@@ -1088,7 +1113,7 @@ function bbDiscard() {
   if (bbHasData() && !confirm('Discard this whole batch? Nothing has been saved yet.')) return;
   BB = { on: false, fromQ: false, date: '', rows: [] }; bbSave(); render(); window.scrollTo(0, 0);
 }
-const bbAmt = r => { const p = toPurity(r.purity), w = parseNum(r.weightBhy), q = p && !isNaN(p) ? quoteFor(p, DED) : null; return q && w > 0 ? round2(q.perBhy * w) : null; };
+const bbAmt = r => { const p = toPurity(r.purity), w = parseNum(r.weightBhy), q = p && !isNaN(p) ? quoteFor(p, DED) : null; return q && w > 0 ? floor5(q.perBhy * w) : null; };
 function bbRowHTML(r, i) {
   const amt = bbAmt(r);
   return `<div class="bbrow${r.err ? ' bad' : ''}" data-i="${i}" data-k="${esc(r.k)}"><div class="bbtop"><span class="n">${i + 1}</span>
@@ -1098,7 +1123,7 @@ function bbRowHTML(r, i) {
       <div><label for="bbw${i}">Weight (BHY)</label><input id="bbw${i}" data-f="w" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.weightBhy)}" placeholder="0.00"></div>
       <div><label for="bbp${i}">Purity %</label><input id="bbp${i}" data-f="p" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.purity)}" placeholder="85.35"></div></div>
       <div><label for="bbc${i}">Cost (₱)</label><input id="bbc${i}" data-f="c" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" value="${esc(r.cost)}" placeholder="0.00">
-      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : amt.toFixed(2)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
+      <button type="button" class="chint${amt == null ? ' hidden' : ''}" data-amt="${amt == null ? '' : String(amt)}" title="Tap to use this as the cost" onclick="bbUseHint(${i})">${amt == null ? '' : `Quote: <b>${peso0(amt)}</b> <span aria-hidden="true">· tap to use</span>`}</button></div></div>
     ${r.err ? `<div class="bberr">${esc(r.err)}</div>` : ''}</div>`;
 }
 function bbHTML() {
@@ -1123,8 +1148,8 @@ function bbTotals() {
 function bbRowUpdate(i) {   // hint + totals only: never re-draws the box being typed in
   const r = BB.rows[i], row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!r || !row) return;
   const ch = row.querySelector('.chint'), amt = bbAmt(r);
-  ch.classList.toggle('hidden', amt == null); ch.dataset.amt = amt == null ? '' : amt.toFixed(2);
-  ch.innerHTML = amt == null ? '' : `Quote: <b>${peso(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
+  ch.classList.toggle('hidden', amt == null); ch.dataset.amt = amt == null ? '' : String(amt);
+  ch.innerHTML = amt == null ? '' : `Quote: <b>${peso0(amt)}</b> <span aria-hidden="true">· tap to use</span>`;
   bbTotals();
 }
 function bbUseHint(i) { const row = document.querySelector(`.bbrow[data-i="${i}"]`); if (!row) return; const v = row.querySelector('.chint').dataset.amt; if (!v) return;
@@ -1288,7 +1313,7 @@ function editItem(no) {
     <label for="ed">Date</label><input id="ed" type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : '')}">
     <button class="btn" id="esave">Save changes</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
   $('#esave').onclick = async () => {
-    const w = parseNum($('#ew').value), p = toPurity($('#ep').value), c = parseNum($('#ec').value);
+    const w = parseNum($('#ew').value), p = $('#ep').value === String(+(it.purity * 100).toFixed(4)) ? Number(it.purity) : toPurity($('#ep').value), c = parseNum($('#ec').value);
     if (!(w > 0)) return toast('Enter the weight in BHY'); if (p === null || isNaN(p)) return toast('Enter a valid purity'); if (c === null || isNaN(c) || c < 0) return toast('Enter the cost');
     const j = await write('editPurchase', { no, weightBhy: w, purity: p, cost: c, date: $('#ed').value }, $('#esave'));
     if (j) { closeModal(); render(); toast(safeMsg(j.message)); }
