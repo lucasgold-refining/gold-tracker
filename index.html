@@ -330,7 +330,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -342,7 +342,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 // Money: rounded to the cent in decimal (1.005 -> 1.01, never "−₱0.00"), shown as #,##0.00.
 const round2 = n => { n = Number(n); const a = Math.abs(n), r = Number(Math.round(a + 'e2') + 'e-2'), v = Math.sign(n) * (isFinite(r) ? r : Math.round(a * 100) / 100); return v === 0 ? 0 : v; };   // half away from zero
 const num = n => round2(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// v26: quoted buy prices are cut down to a multiple of ₱5, no centavos (6983.47 -> 6980, 6985 -> 6985). Works in whole
+// v26: quoted buy prices are cut down to a multiple of ₱5, no centavos (6983.47 -> 6980, 6985 -> 6985); v27: applied to the per-BHY price. Works in whole
 // centavos first (tiny float noise like 6984.999999 counts as 6985.00), so a price never drops a step by float error.
 const floor5 = n => { n = Number(n); if (!isFinite(n) || n <= 0) return 0; const c = Math.floor(Math.round(n * 1e6) / 1e4); return Math.floor(c / 500) * 5; };
 const peso0 = n => { if (n == null || n === '' || isNaN(n)) return '–'; return '₱' + Math.round(Number(n)).toLocaleString('en-GB'); };
@@ -692,7 +692,9 @@ function quoteFor(p, m) {
   if (m == null) m = DED;
   const bhy = s.bhyPerGram || 2, full = isFullPurity(p, s);
   const perGram = full ? s.base : Math.max(0, s.base * (p - m));
-  return { perGram: floor5(perGram), perBhy: floor5(perGram / bhy), rawGram: perGram, rawBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
+  // v27: the per-BHY price is the master (cut to ₱5); per gram is that × BHY per gram, so the two always match.
+  const qBhy = floor5(perGram / bhy);
+  return { perGram: qBhy * bhy, perBhy: qBhy, rawGram: perGram, rawBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
 }
 const ruleTxt = q => { const s = S(); return q.full ? `Full base (${pct(s.fullMin).replace(/0+%$/, '%').replace(/\.%$/, '%')} and up)` : `Base × (purity − ${dedTxt(q.m != null ? q.m : DED)})`; };
 const dedToggleHTML = () => `<div class="seg" role="group" aria-label="Purity deduction" id="dedSeg">${DED_OPTS.map(v =>
