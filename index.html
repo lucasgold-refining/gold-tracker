@@ -131,6 +131,20 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .bq .p{min-width:0}
 .btn.buythis{background:var(--green);color:#fff;margin-top:12px}
 .pnote{text-align:left;margin:6px 0 0;font-size:12px;color:#8f8771}
+.xrf{margin:4px 0 12px;padding:10px 12px;border:2px solid var(--goldline);border-radius:12px;background:var(--goldbg);font-size:14px}
+.xrf .xtop{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.xrf .xst{font-weight:800;flex:1;min-width:0;overflow-wrap:anywhere}
+.xrf .xst.on{color:var(--green)}.xrf .xst.off{color:var(--red)}.xrf .xst.pause{color:var(--brown)}
+.xrf .btn.sm{min-height:36px;padding:6px 10px;font-size:14px}
+.xrf .xlast{margin-top:6px;font-weight:700;color:#3d2c00}
+.xrf .xwarn{margin-top:6px;font-weight:700;color:var(--red)}
+.xrf .xnote{margin-top:6px;font-weight:700;color:var(--blue)}
+.xrf .xarm{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.xrf .xarm button[aria-pressed=true]{background:var(--ink);color:var(--gold2)}
+.xflash{animation:xflash 1.2s ease-out}
+@keyframes xflash{0%{box-shadow:0 0 0 4px var(--gold2);background:var(--goldbg)}100%{box-shadow:none}}
+.bq .xno{display:block;font-size:12px;font-weight:600;color:var(--muted);overflow-wrap:anywhere}
+.bqmv{border:0;background:var(--goldbg);color:#3d2c00;border:1px solid var(--goldline);border-radius:10px;min-width:44px;min-height:44px;font-size:18px;font-weight:800;cursor:pointer;flex:none}
 .linkbtn{border:0;background:none;padding:6px 4px;font:inherit;font-size:12px;color:#6b4f0e;text-decoration:underline;cursor:pointer}
 .chint{display:inline-block;border:0;background:none;padding:8px 2px;margin-top:2px;font:inherit;font-size:14px;color:#8f8771;cursor:pointer;text-align:left}
 .chint b{font-weight:600}
@@ -316,7 +330,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -516,7 +530,7 @@ function softRender() {
   else if (view === 'sales') { const f = $('#rnFigs'); if (f) { f.innerHTML = rnFigsHTML(rnTotals()); rnUpdate(); }
     const r = $('#salesRest'); if (r && !beT) { r.innerHTML = salesRestHTML(); bindBE(); } else document.querySelectorAll('.best').forEach(beUpdate); }
   else if (view === 'buy') { const n = $('#nextNo'); if (n) n.textContent = nextNoTxt(); const l = $('#lastAdded'); if (l) l.innerHTML = lastAddedHTML(); buyHint(); }
-  else { const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value); const b = $('#bqCard'); if (b) b.innerHTML = bqHTML(); }
+  else { const q = $('#qp'), o = $('#qout'); if (q && o) o.innerHTML = qOutHTML(q.value); const b = $('#bqCard'); if (b) b.innerHTML = bqHTML(); xrfPaint(); }
   applyEye();
 }
 async function refresh(quiet) {
@@ -719,6 +733,7 @@ function quoteHTML() {
   const B = QMODE === 'batch';
   return `<div class="two"><div class="card">
     ${modeToggleHTML()}
+    ${xrfOK() ? `<div class="xrf" id="xrfBar">${xrfBarHTML()}</div>` : ''}
     <h2>Buying quote</h2>
     <label for="qp">Purity % <span class="hint">e.g. 87.1 or 0.871</span></label>
     <div class="cell" id="qCell"><input id="qp" class="bigin" type="text" inputmode="decimal" enterkeyhint="${B ? 'enter' : 'go'}" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="%" value="${esc(qVal)}"></div>
@@ -747,8 +762,8 @@ function qOutHTML(v) {
 const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(whenTxt(lastSync))}</div>` : '';
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
-  const rows = BQ.map((p, i) => { const q = quoteFor(p); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}</span>
-    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span><button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
+  const rows = BQ.map((p, i) => { const q = quoteFor(p), x = bqLabel(i); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}${x ? `<span class="xno">XRF #${esc(x.no)}${x.time ? ' · ' + esc(x.time) : ''}</span>` : ''}</span>
+    <span class="v">${q ? peso(q.perBhy) : '₱—'}<small>per BHY</small></span>${xrfOK() ? `<button class="bqmv" aria-label="Move ${pct(p)} out to a single quote" title="Move out to a single quote" onclick="bqMoveOut(${i})">⤴</button>` : ''}<button class="bqbuy" aria-label="Buy ${pct(p)}" title="Buy this" onclick="buyFrom(${p})">🛒</button><button class="x" aria-label="Remove" onclick="bqDel(${i})">✕</button></div>`; }).join('');
   return `<h2>Batch quote <button class="btn sm light" onclick="bqClear()">Clear</button></h2>${rows}${QMODE === 'batch' ? `<button type="button" class="btn bball" id="bqBuyAll" onclick="buyAll()">🛒 Buy all ${BQ.length} item${BQ.length === 1 ? '' : 's'}</button>` : ''}`;
 }
 // Spreadsheet-cell behaviour: focusing selects everything, so typing replaces the value.
@@ -791,10 +806,152 @@ function bindQuote() {
 function bqAdd() {
   const el = $('#qp'); const p = toPurity(el.value);
   if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); return false; }
-  BQ.push(p); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); selectAll(el); return true;
+  bqPush(p, null); selectAll(el); return true;
 }
-function bqDel(i) { BQ.splice(i, 1); save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); }
-function bqClear() { if (!BQ.length || !confirm('Clear the batch quote list?')) return; BQ = []; save(BQ_KEY, BQ); $('#bqCard').innerHTML = bqHTML(); }
+function bqDel(i) { bqSyncX(); BQ.splice(i, 1); BQX.splice(i, 1); save(BQ_KEY, BQ); save(BQX_KEY, BQX); const c = $('#bqCard'); if (c) c.innerHTML = bqHTML(); }
+function bqClear() { if (!BQ.length || !confirm('Clear the batch quote list?')) return; BQ = []; save(BQ_KEY, BQ); bqSyncX(); $('#bqCard').innerHTML = bqHTML(); }
+// ---------- XRF link (v25): Niton XL2 → NDTr Live Download CSV → Quote purity (PC Chrome/Edge only) ----------
+// The app watches the CSV that Live Download appends to. Only rows added AFTER connecting count, by position in the file
+// (the XL2's reading numbers can reset), and only "Final" readings. Batch rows remember the reading number they came from.
+const BQX_KEY = 'gold-tracker-batchxrf', XP_KEY = 'gold-tracker-xrfpause';
+let BQX = load(BQX_KEY) || [];       // per batch row: { no, time } from the XRF, or null when typed
+function bqSyncX() { if (!BQ.length) BQX = []; while (BQX.length < BQ.length) BQX.push(null); if (BQX.length > BQ.length) BQX.length = BQ.length; save(BQX_KEY, BQX); }
+const bqLabel = i => BQX.length === BQ.length ? BQX[i] : null;
+function bqPush(p, x) { bqSyncX(); BQ.push(p); BQX.push(x || null); save(BQ_KEY, BQ); save(BQX_KEY, BQX); const c = $('#bqCard'); if (c) c.innerHTML = bqHTML(); }
+function bqMoveOut(i) {   // take a row out of the batch and quote it on its own
+  const p = BQ[i]; if (!(p > 0)) return; bqDel(i);
+  qVal = pTxt(p); rememberQuote(p); QMODE = 'single'; save(QM_KEY, 'single');
+  if (view === 'quote') { const y = window.scrollY; render(); window.scrollTo(0, y); xrfFlash(); }
+  toast(`${pct(p)} moved out to a single quote`);
+}
+const xrfOK = () => typeof window.showOpenFilePicker === 'function' && !matchMedia('(pointer:coarse)').matches;
+const XRF = { h: null, name: '', perm: '', paused: !!load(XP_KEY), base: null, stamp: '', tail: false, last: null, warn: '', note: '', arm: '', back: false, busy: false, fails: 0 };
+const xrfStore = window.__xrfStore || {   // the file handle survives reloads in IndexedDB (permission is asked again)
+  db() { return new Promise((res, rej) => { const r = indexedDB.open('gold-tracker-xrf', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async get() { const d = await this.db(); return new Promise((res, rej) => { const q = d.transaction('h').objectStore('h').get('file'); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
+  async put(h) { const d = await this.db(); return new Promise((res, rej) => { const t = d.transaction('h', 'readwrite'); t.objectStore('h').put(h, 'file'); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
+};
+const xrfSplit = line => line.split(',').map(c => c.trim());
+function xrfParse(text) {   // -> header text, column positions (by exact name), data lines, and whether the last line is unfinished
+  const lines = String(text).split(/\r?\n/); let tail = false;
+  if (lines[lines.length - 1] === '') lines.pop(); else tail = true;
+  const L = lines.filter(l => l.trim() !== '');
+  if (!L.length) return { header: '', cols: null, rows: [], tail: false };
+  const H = xrfSplit(L[0]), ix = n => H.findIndex(h => h.toLowerCase() === n.toLowerCase());
+  return { header: H.join(','), cols: { au: ix('Au'), no: ix('Reading No'), time: ix('Time'), idx: ix('Index'), seq: ix('Sequence'), units: ix('Units') }, rows: L.slice(1), tail: tail && L.length > 1 };
+}
+function xrfRow(line, c) {
+  const v = xrfSplit(line), g = i => i >= 0 && i < v.length ? v[i] : '';
+  const raw = g(c.au), units = g(c.units), t = g(c.time);
+  let au = /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
+  if (!isNaN(au) && /ppm/i.test(units)) au = +(au / 10000).toFixed(6);
+  return { au, raw, no: g(c.no), idx: g(c.idx), time: (t.match(/(\d{1,2}:\d{2})(:\d{2})?\s*$/) || [])[1] || t,
+    final: c.seq < 0 || /^final$/i.test(g(c.seq)), ok: !isNaN(au) && au > 0 && au <= 100 };
+}
+const xrfAuTxt = au => (Math.round(au * 100 + 1e-6) / 100).toFixed(2);
+// The purity text as the box expects it: 85.735 (percent). Below 1% add "%" so it is not read as a fraction.
+const xrfBoxTxt = au => String(+au.toFixed(4)) + (au <= 1 ? '%' : '');
+async function xrfPoll(force) {
+  if (!XRF.h || XRF.perm !== 'granted' || XRF.busy) return;
+  if (!force && document.visibilityState !== 'visible') return;
+  XRF.busy = true;
+  try {
+    const f = await XRF.h.getFile(), stamp = f.lastModified + ':' + f.size;
+    if (XRF.fails >= 3 || /not updating/.test(XRF.warn)) { XRF.warn = ''; xrfPaint(); }
+    XRF.fails = 0;
+    if (!force && stamp === XRF.stamp && !XRF.tail) return;            // unchanged since the last look
+    const acceptTail = stamp === XRF.stamp && XRF.tail;                  // an unfinished last line that stayed put = complete
+    XRF.stamp = stamp;
+    const P = xrfParse(await f.text());
+    let rows = P.rows; XRF.tail = P.tail && !acceptTail; if (XRF.tail) rows = rows.slice(0, -1);
+    if (P.cols && P.cols.au < 0) XRF.warn = 'This file has no Au column. Pick the Live Download CSV.';
+    const B = XRF.base, nb = { n: rows.length, header: P.header, line: rows[rows.length - 1] || '' };
+    XRF.base = nb;
+    if (!B) return xrfPaint();                                           // just connected: existing readings never fill
+    if (B.header && (P.header !== B.header || rows.length < B.n || (B.n && rows[B.n - 1] !== B.line))) {
+      XRF.note = 'File restarted: only readings taken from now on will be used.'; return xrfPaint();
+    }
+    rows.slice(B.header ? B.n : 0).forEach(l => xrfTake(xrfRow(l, P.cols)));   // new rows, oldest first
+    xrfPaint();
+  } catch (e) {
+    const n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') { XRF.perm = 'prompt'; XRF.warn = 'XRF file not updating: permission was lost. Tap Reconnect.'; }
+    else if (n === 'NotFoundError') XRF.warn = 'XRF file not updating: the file was moved or deleted. Connect it again.';
+    else if (++XRF.fails >= 3) XRF.warn = 'XRF file not updating: the file can\'t be read. Check Live Download, or reconnect.';
+    xrfPaint();
+  } finally { XRF.busy = false; }
+}
+function xrfTake(r) {   // one new row from the file
+  if (!r.final) return;
+  const prev = XRF.last;
+  XRF.note = prev && r.no !== '' && prev.no !== '' && Number(r.no) < Number(prev.no) ? `Numbering reset on the XL2 (#${prev.no} → #${r.no}). This is still the latest reading.` : '';
+  XRF.last = r;
+  if (XRF.paused) { r.where = 'paused, not used'; return; }
+  if (!r.ok) { r.where = 'not used'; XRF.warn = `Reading #${r.no}: Au is "${r.raw || 'blank'}", not a number. Nothing was filled.`; return; }
+  XRF.warn = '';
+  const t = xrfBoxTxt(r.au), p = toPurity(t), lab = { no: r.no, time: r.time };
+  if (QMODE === 'batch' && XRF.arm === 'single') {      // one reading out to a Single quote, then back to the batch
+    XRF.arm = ''; XRF.back = true; qVal = t; rememberQuote(p); QMODE = 'single'; save(QM_KEY, 'single');
+    if (view !== 'quote') go('quote'); else { const y = window.scrollY; render(); window.scrollTo(0, y); }
+    r.where = 'single quote'; xrfFlash(); return;
+  }
+  if (XRF.back) { XRF.back = false; if (QMODE !== 'batch') { QMODE = 'batch'; save(QM_KEY, 'batch'); if (view === 'quote') { const y = window.scrollY; render(); window.scrollTo(0, y); } } }
+  qVal = t; rememberQuote(p);
+  const el = $('#qp'), o = $('#qout');
+  if (el && view === 'quote') { el.value = t; if (o) o.innerHTML = qOutHTML(t); if (document.activeElement === el) selectAll(el); }
+  if (QMODE === 'batch') {
+    if (XRF.arm === 'replace' && BQ.length) {
+      bqSyncX(); BQ[BQ.length - 1] = p; BQX[BQX.length - 1] = lab; save(BQ_KEY, BQ); save(BQX_KEY, BQX);
+      const c = $('#bqCard'); if (c) c.innerHTML = bqHTML(); r.where = 'replaced row ' + BQ.length;
+    } else { bqPush(p, lab); r.where = 'batch row ' + BQ.length; }
+    XRF.arm = '';
+  } else r.where = 'quote';
+  xrfFlash();
+}
+function xrfFlash() { const c = $('#qCell'); if (!c) return; c.classList.remove('xflash'); void c.offsetWidth; c.classList.add('xflash'); }
+function xrfPaint() { const b = $('#xrfBar'); if (b) b.innerHTML = xrfBarHTML(); }
+function xrfBarHTML() {
+  const on = XRF.h && XRF.perm === 'granted';
+  const st = !XRF.h ? ['off', 'XRF not connected'] : !on ? ['off', 'XRF disconnected · ' + XRF.name] : XRF.paused ? ['pause', 'XRF paused · ' + XRF.name] : ['on', 'XRF connected · ' + XRF.name];
+  const btn = !XRF.h ? `<button type="button" class="btn sm gold" id="xrfConnect" onclick="xrfConnect()">Connect XRF file</button>`
+    : (!on ? `<button type="button" class="btn sm gold" id="xrfReconnect" onclick="xrfReconnect()">Reconnect</button>`
+      : `<button type="button" class="btn sm light" id="xrfPause" aria-pressed="${XRF.paused}" onclick="xrfPause()">${XRF.paused ? '▶ Resume' : '⏸ Pause'}</button>`)
+      + `<button type="button" class="btn sm light" id="xrfChange" onclick="xrfConnect()">Change file</button>`;
+  const L = XRF.last;
+  const last = L ? `<div class="xlast" id="xrfLast">Last: Au ${L.ok ? xrfAuTxt(L.au) + '%' : esc(L.raw || '—')} · #${esc(L.no)} · ${esc(L.time)}${L.where ? ' → ' + esc(L.where) : ''}</div>`
+    : on ? `<div class="xlast" id="xrfLast">Waiting for the next reading…</div>` : '';
+  const arm = on && QMODE === 'batch' ? `<div class="xarm"><button type="button" class="btn sm light" id="xrfArmRep" aria-pressed="${XRF.arm === 'replace'}" onclick="xrfArm('replace')">↺ Replace last row</button><button type="button" class="btn sm light" id="xrfArmSingle" aria-pressed="${XRF.arm === 'single'}" onclick="xrfArm('single')">Next reading: Single</button></div>` : '';
+  const back = on && XRF.back && QMODE === 'single' ? `<div class="xnote" id="xrfBack">The next reading goes back to the batch.</div>` : '';
+  return `<div class="xtop"><span class="xst ${st[0]}" id="xrfStatus">${esc(st[1])}</span>${btn}</div>${last}${XRF.warn ? `<div class="xwarn" id="xrfWarn">⚠ ${esc(XRF.warn)}</div>` : ''}${XRF.note ? `<div class="xnote" id="xrfNote">${esc(XRF.note)}</div>` : ''}${back}${arm}`;
+}
+function xrfReset() { Object.assign(XRF, { base: null, stamp: '', tail: false, warn: '', note: '', fails: 0 }); }
+async function xrfConnect() {
+  let h; try { [h] = await window.showOpenFilePicker({ types: [{ description: 'XRF readings (CSV)', accept: { 'text/csv': ['.csv'] } }], multiple: false }); } catch (e) { return; }   // cancelled
+  if (!h) return;
+  XRF.h = h; XRF.name = h.name; XRF.perm = 'granted'; XRF.last = null; XRF.arm = ''; XRF.back = false; xrfReset();
+  try { await xrfStore.put(h); } catch (e) {}
+  await xrfPoll(true); xrfPaint(); toast('XRF connected: new readings fill the quote');
+}
+async function xrfReconnect() {
+  if (!XRF.h) return xrfConnect();
+  let p = 'denied'; try { p = await XRF.h.requestPermission({ mode: 'read' }); } catch (e) {}
+  XRF.perm = p; xrfReset();
+  if (p === 'granted') await xrfPoll(true); else XRF.warn = 'Permission not given. Tap Reconnect and choose Allow.';
+  xrfPaint();
+}
+function xrfPause() { XRF.paused = !XRF.paused; save(XP_KEY, XRF.paused); if (XRF.paused) XRF.arm = ''; xrfPaint(); }
+function xrfArm(k) { XRF.arm = XRF.arm === k ? '' : k; xrfPaint(); }
+function xrfInit() {
+  if (!xrfOK()) return;
+  xrfStore.get().then(async h => {
+    if (!h || XRF.h) return; XRF.h = h; XRF.name = h.name || 'XRF file';
+    try { XRF.perm = await h.queryPermission({ mode: 'read' }); } catch (e) { XRF.perm = 'prompt'; }
+    if (XRF.perm === 'granted') await xrfPoll(true);
+    xrfPaint();
+  }).catch(() => {});
+  setInterval(() => xrfPoll(), 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') xrfPoll(); });
+}
 
 // Buy
 let buyDraft = { date: '', weightBhy: '', purity: '', cost: '' };
@@ -1042,7 +1199,7 @@ function saveAll() {
   lastBB = Date.now();
   const at = new Date().toISOString();
   out.forEach(x => enqueue({ rid: rid(), date: d, weightBhy: x.w, purity: x.p, cost: x.c, createdAt: at, tries: 0 }));
-  if (BB.fromQ) { BQ = []; save(BQ_KEY, BQ); }
+  if (BB.fromQ) { BQ = []; save(BQ_KEY, BQ); bqSyncX(); }
   forgetQuote();
   BB = { on: false, fromQ: false, date: '', rows: [] }; bbSave();
   buyDraft = { date: d === todayISO() ? '' : d, weightBhy: '', purity: '', cost: '' }; render(); window.scrollTo(0, 0);
@@ -1529,7 +1686,7 @@ setInterval(() => {   // every 60 s: retry the queue, or check whether the sheet
   if (pendingQ().length) syncQueue(); else if (netDown) refresh(true);
 }, SYNC_EVERY_MS);
 document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
-render(); focusQuote();
+render(); focusQuote(); xrfInit();
 setupFromHash().then(done => { if (connected()) { if (!done) refresh(true); else if (pendingQ().length) syncQueue(); } });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
