@@ -108,6 +108,29 @@ input.bigin{font-size:30px;font-weight:800;text-align:center;min-height:70px}
 .stkwrap{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
 @media (min-width:900px){.stkwrap{grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:start}}
 /* v10: Total in stock is the main Dashboard card */
+.stkcol{display:grid;gap:12px;min-width:0}
+/* v30: grams bought per day (one Sun–Sat week) */
+.stk.wk{background:#fff;border:2px solid var(--line);padding:14px 14px 10px}
+.wknav{display:flex;gap:6px}
+.wknav button{min-width:44px;min-height:40px;border-radius:10px;border:1.5px solid var(--ink);background:#fff;color:var(--ink);font-size:24px;font-weight:900;line-height:1;cursor:pointer}
+.wknav button:disabled{opacity:.3;cursor:default;border-color:var(--line)}
+.wkhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 8px;font-size:14px;color:var(--muted);font-weight:700}
+.wkhead b{font-size:20px;color:var(--ink);white-space:nowrap}
+.wkbars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;align-items:end}
+.wkd{display:flex;flex-direction:column;align-items:center;min-width:0}
+.wkv{font-size:12px;font-weight:800;color:var(--ink);white-space:nowrap;min-height:16px;letter-spacing:-.2px}
+.wkbar{width:100%;max-width:46px;height:110px;display:flex;align-items:flex-end;background:#f4efe1;border-radius:6px 6px 0 0;overflow:hidden}
+.wkbar i{display:block;width:100%;background:var(--ink);border-radius:6px 6px 0 0}
+.wkd.today .wkbar i{background:var(--gold)}
+.wkd.today .wkl b{background:var(--gold);color:var(--ink);border-radius:6px;padding:0 4px}
+.wkd.fut .wkbar{background:repeating-linear-gradient(45deg,#f7f3e8,#f7f3e8 4px,#fff 4px,#fff 8px)}
+.wkd.fut .wkl{opacity:.5}
+.wkl{font-size:12px;color:var(--muted);text-align:center;line-height:1.25;margin-top:4px}
+.wkl b{font-size:14px;color:var(--ink)}
+.wkempty{padding:6px 0 2px;text-align:center}
+.wknote{margin-top:6px;font-size:13px}
+@media (max-width:360px){.wkv{font-size:10.5px}.wkbar{height:90px}}
+.tiles .tile.wide{grid-column:1/-1}
 .stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
 .stk.main h3{font-size:20px;color:var(--brown)}
 .stk .figs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 10px}
@@ -337,7 +360,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -541,7 +564,12 @@ function applyAdded(j, it) {
   if (!item) { const sell = s.base ? s.base * it.purity * it.weightBhy / bhy : null;
     item = { no, bno: j.bno != null ? j.bno : null, date: it.date, weightBhy: it.weightBhy, grams: it.weightBhy / bhy, purity: it.purity, cost: it.cost,
       projSell: sell == null ? null : round2(sell), projProfit: sell == null ? null : round2(sell - it.cost), status: 'In stock' }; }
+  const known = (ST.stock || []).some(x => Number(x.no) === no);
   ST.stock = (ST.stock || []).filter(x => Number(x.no) !== no).concat([item]);
+  if (!known && ST.daily && typeof ST.daily === 'object') {   // v30: the week chart counts it at once
+    const d = String(item.date || it.date || '').slice(0, 10), g = item.grams != null ? Number(item.grams) : Number(item.weightBhy) / bhy;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && g > 0) ST.daily[d] = (Number(ST.daily[d]) || 0) + g;
+  }
   ST.nextNo = Math.max(Number(ST.nextNo) || 0, no + 1);
   const b = item.bno != null ? Number(item.bno) : null; if (b > 0 && ST.batchNos) ST.nextBno = Math.max(Number(ST.nextBno) || 0, b + 1);
   if (j.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.version));
@@ -1409,9 +1437,7 @@ function rnFigsHTML(t) {
       <div><span>Raw weight</span><b>${grams(t.raw)} g</b></div>
       <div id="rnSilver"><span>Silver needed${t.high ? ` <small class="muted rnx">excl. ${t.high} item${t.high === 1 ? '' : 's'} ≥ ${fullPctTxt()}</small>` : ''}</span><b>${grams(t.silver)} g</b></div>
       <div><span>Refined grams (est.)</span><b>${grams(t.ref)} g</b></div>
-      <div><span>Cost of items</span><b>${peso(t.cost)}</b></div>
-      <div><span>Refining fee</span><b>${peso(t.fee)}</b></div>
-      <div><span>Cost incl. fee</span><b>${peso(t.cost + t.fee)}</b></div>`;
+      <div id="rnCost"><span>Total cost</span><b>${peso(t.cost + t.fee)}</b></div>`;   // v30: the refining fee is inside this total, never shown on its own
 }
 function rnOutHTML(t, txt) {
   const base = parseNum(txt), okB = base != null && !isNaN(base) && base > 0;
@@ -1637,16 +1663,66 @@ function stockBoxesHTML() {
   const all = stockRows(), today = manilaToday();
   const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), A = stockSum(all);
   const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
-  return `<div class="stkwrap" id="stockMain">
+  return `<div class="stkwrap" id="stockMain"><div class="stkcol">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
         <div><span>Items</span><b id="sCount" class="fit"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit"><span class="fv">${grams(A.g)} g</span></b></div>
         <div><span>Cost</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
       </div>
       <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>${loc(A)}</div>
+    ${weekHTML()}</div>
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
       <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${grams(T.g)} g</b></div>
       <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div></div>`;
+}
+
+// ---------- v30: grams bought per day, one Sunday–Saturday week (Manila), under Total in stock ----------
+// Counts every purchase whatever its batch / status: the sheet's getState.daily (Api.gs v9: Purchases + Archive +
+// removed Archive rows) plus purchases still waiting to sync. Older sheet: only what is in Stock (with a note).
+let dashWeek = 0;   // 0 = this week, -1 = last week, ...
+const DAY_MS = 86400000;
+const isoUTC = t => new Date(t).toISOString().slice(0, 10);
+const utcOf = iso => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+function weekDaily() {
+  const s = S() || {}, bhy = s.bhyPerGram || 2, out = {}, add = (d, g) => { d = String(d || '').slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(d) && g > 0) out[d] = (out[d] || 0) + g; };
+  const full = ST && ST.daily && typeof ST.daily === 'object';
+  if (full) Object.keys(ST.daily).forEach(k => add(k, Number(ST.daily[k]) || 0));
+  else (ST && ST.stock || []).forEach(x => add(x.date, x.grams != null ? Number(x.grams) : Number(x.weightBhy) / bhy));
+  pendingQ().forEach(x => add(x.date, Number(x.weightBhy) / bhy));
+  return { out, full };
+}
+function weekInfo(off) {
+  const today = manilaToday(), t = utcOf(today), start = t - new Date(t).getUTCDay() * DAY_MS + (off || 0) * 7 * DAY_MS;
+  return { today, start, days: Array.from({ length: 7 }, (_, i) => isoUTC(start + i * DAY_MS)) };
+}
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function weekRangeTxt(a, b) {   // 18 – 24 Oct 2026 · 27 Sep – 3 Oct 2026 · 28 Dec 2025 – 3 Jan 2026
+  const A = [+a.slice(8), MON[+a.slice(5, 7) - 1], a.slice(0, 4)], B = [+b.slice(8), MON[+b.slice(5, 7) - 1], b.slice(0, 4)];
+  if (A[2] !== B[2]) return `${A.join(' ')} – ${B.join(' ')}`;
+  return A[1] === B[1] ? `${A[0]} – ${B[0]} ${B[1]} ${B[2]}` : `${A[0]} ${A[1]} – ${B[0]} ${B[1]} ${B[2]}`;
+}
+function weekHTML() {
+  const W = weekInfo(dashWeek), D = weekDaily(), vals = W.days.map(d => D.out[d] || 0);
+  const tot = vals.reduce((a, x) => a + x, 0), max = Math.max(...vals, 0);
+  const earlier = Object.keys(D.out).some(k => k < W.days[0] && D.out[k] > 0);
+  const gap = ST && ST.dailyGapUntil && W.days[0] <= ST.dailyGapUntil;
+  const bars = W.days.map((d, i) => {
+    const fut = d > W.today, v = vals[i], h = max > 0 ? Math.max(v > 0 ? 4 : 0, Math.round(v / max * 100)) : 0;
+    return `<div class="wkd${fut ? ' fut' : ''}${d === W.today ? ' today' : ''}" data-day="${d}" data-g="${round2(v).toFixed(2)}" title="${DOW[i]} ${+d.slice(8)} ${MON[+d.slice(5, 7) - 1]}: ${grams(v)} g">
+      <span class="wkv">${fut ? '' : v > 0 ? grams(v) : '0'}</span><div class="wkbar"><i style="height:${h}%"></i></div>
+      <span class="wkl">${DOW[i]}<br><b>${+d.slice(8)}</b></span></div>`;
+  }).join('');
+  return `<div class="stk wk" id="dWeek"><h3><span>Gold bought per day</span>
+      <span class="wknav"><button type="button" id="wkPrev" aria-label="Previous week" onclick="weekNav(-1)"${earlier ? '' : ' disabled'}>‹</button><button type="button" id="wkNext" aria-label="Next week" onclick="weekNav(1)"${dashWeek >= 0 ? ' disabled' : ''}>›</button></span></h3>
+    <div class="wkhead"><span id="wkRange">${weekRangeTxt(W.days[0], W.days[6])}${dashWeek === 0 ? ' · this week' : ''}</span><b id="wkTotal">${grams(tot)} g</b></div>
+    ${tot > 0 ? `<div class="wkbars" id="wkBars" role="img" aria-label="Grams bought each day, ${weekRangeTxt(W.days[0], W.days[6])}">${bars}</div>`
+      : `<div class="wkbars empty" id="wkBars">${bars}</div><div class="empty wkempty" id="wkEmpty">No gold bought ${dashWeek === 0 ? 'this week yet' : 'this week'}.</div>`}
+    ${!D.full ? '<div class="muted wknote">Only items in stock are counted. Paste Api.gs v9 and deploy a new version to include refined items.</div>'
+      : gap ? `<div class="muted wknote">Refined items removed from the Archive before ${esc(ST.dailyGapUntil)} only have monthly totals, so this week may be missing some.</div>` : ''}</div>`;
+}
+function weekNav(d) {
+  dashWeek = Math.min(0, dashWeek + d);
+  const el = $('#dWeek'); if (el) el.outerHTML = weekHTML();
 }
 
 // Dashboard (v10): stock first; this month's profit and the all-time totals folded into one dropdown.
@@ -1661,9 +1737,7 @@ function dashHTML() {
     ${month}
     <div class="eyerow"><span class="muted">All-time totals</span>${eyeBtn('dash:all')}</div>
     <div class="tiles">
-    <div class="tile green"><div class="lbl">Total realized profit</div><div class="val fit" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
-    <div class="tile"><div class="lbl">Est. refining profit (items in stock)</div><div class="val fit" id="dRef">${prof(d.estRefiningProfit, 'dash:all')}</div>
-      ${d.openBatches ? `<div class="muted">Unsold batches: ${prof(d.openBatchesEstProfit, 'dash:all')} est.</div>` : ''}</div>
+    <div class="tile green wide"><div class="lbl">Total realized profit</div><div class="val fit" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
     <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val fit" id="dBase"><span class="fv">${peso(ST.base)}</span></div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
     <div class="tile ink"><div class="lbl">Cash used</div><div class="val fit" id="dCash"><span class="fv">${peso(d.cashUsed)}</span></div></div>
   </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(whenTxt(lastSync))}</div>`;
