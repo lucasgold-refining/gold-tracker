@@ -122,8 +122,9 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .wkv{font-size:12px;font-weight:800;color:var(--ink);white-space:nowrap;min-height:16px;letter-spacing:-.2px}
 .wkbar{width:100%;max-width:46px;height:110px;display:flex;align-items:flex-end;background:#f4efe1;border-radius:6px 6px 0 0;overflow:hidden}
 .wkbar i{display:block;width:100%;background:var(--ink);border-radius:6px 6px 0 0}
-/* v33: stacked bars inside the day's bar (same total height as before): not sold yet (gold) on top of sold (green) */
-.wkbars.two .wkd .wkbar i{display:flex;flex-direction:column;overflow:hidden}
+/* v33: stacked bars inside the day's bar (same total height as before): not sold yet (gold) on top of sold (green).
+   v34: the marker class is wk2, not "two": the desktop layout rule .two{grid-template-columns:1fr 1fr} turned the 7 days into 2 columns */
+.wkbars.wk2 .wkd .wkbar i{display:flex;flex-direction:column;overflow:hidden}
 .wkbar i .wu,.wkbar i .ws{display:block;width:100%;flex:none}
 .wkbar i .wu,.wkleg i.wu{background:var(--gold)}
 .wkbar i .ws,.wkleg i.ws{background:var(--green)}
@@ -397,7 +398,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -1898,7 +1899,7 @@ function weekHTML() {
   return `<div class="stk wk" id="dWeek"><h3><span>Gold bought per day</span>
       <span class="wknav"><button type="button" id="wkPrev" aria-label="Previous week" onclick="weekNav(-1)"${earlier ? '' : ' disabled'}>‹</button><button type="button" id="wkNext" aria-label="Next week" onclick="weekNav(1)"${dashWeek >= 0 ? ' disabled' : ''}>›</button></span></h3>
     <div class="wkhead"><span id="wkRange">${weekRangeTxt(W.days[0], W.days[6])}${dashWeek === 0 ? ' · this week' : ''}</span><b id="wkTotal">${grams(tot)} g</b></div>
-    ${tot > 0 ? `<div class="wkbars${D.two ? ' two' : ''}" id="wkBars" role="img" aria-label="Grams bought each day, ${weekRangeTxt(W.days[0], W.days[6])}${D.two ? `: ${grams(sTot)} g sold, ${grams(tot - sTot)} g not sold yet` : ''}">${bars}</div>
+    ${tot > 0 ? `<div class="wkbars${D.two ? ' wk2' : ''}" id="wkBars" role="img" aria-label="Grams bought each day, ${weekRangeTxt(W.days[0], W.days[6])}${D.two ? `: ${grams(sTot)} g sold, ${grams(tot - sTot)} g not sold yet` : ''}">${bars}</div>
       ${D.two ? `<div class="wkleg" id="wkLegend"><span><i class="wu"></i>Not sold yet <b id="wkUnsold">${grams(tot - sTot)} g</b></span><span><i class="ws"></i>Sold <b id="wkSold">${grams(sTot)} g</b></span></div>` : ''}`
       : `<div class="wkbars empty" id="wkBars">${bars}</div><div class="empty wkempty" id="wkEmpty">No gold bought ${dashWeek === 0 ? 'this week yet' : 'this week'}.</div>`}
     ${!D.full ? '<div class="muted wknote">Only items in stock are counted. Paste Api.gs v9 and deploy a new version to include refined items.</div>'

@@ -1,5 +1,5 @@
 // Lucas Gold Tracker service worker. Bump CACHE on every release.
-const CACHE = 'gold-tracker-v33';
+const CACHE = 'gold-tracker-v34';
 const ASSETS = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const NAV_TIMEOUT_MS = 6000;   // weak signal: after this, open the saved copy instead of waiting
 
