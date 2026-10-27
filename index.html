@@ -159,6 +159,7 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .part .pl>span small{display:block;font-size:12px;font-weight:600}
 .part .pl b{white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
 #pRef{border-left:4px solid var(--gold)}
+.part .pl b small.src{font-size:12px;font-weight:600;color:var(--muted);margin-left:6px}   /* v36: 1 batch = 1 item; its source count, subtle */
 #dToday .sumlist .tcap{padding:2px 0 0;border-bottom:0;font-size:13px;font-weight:800;color:var(--brown)}
 #dToday .tsum{border-top:2px solid var(--line)}
 #dToday .tsum b{font-size:18px}
@@ -443,7 +444,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -886,7 +887,7 @@ function render() {
   else if (view === 'buy') { app.innerHTML = top + bar + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
   else if (view === 'stock') { app.innerHTML = top + bar + (needData() || stockHTML()); if ($('#sFilt')) sfUpdate(); }
   else if (view === 'sales') { app.innerHTML = top + bar + (needData() || salesHTML()); bindRN(); bindBE(); }
-  else if (view === 'dash') app.innerHTML = top + bar + (needData() || dashHTML());
+  else if (view === 'dash') { app.innerHTML = top + bar + (needData() || dashHTML()); if (ST) setTimeout(fcCheck, 0); }
   applyEye();
 }
 
@@ -1976,11 +1977,50 @@ function stockSum(L) {
 // grams as bought (the sheet's Refining register), cost incl. fee, and its value at today's base × its refined weight
 // (the actual refined weight when one is typed on the batch, else the computed refined grams), the same rule as the
 // stock items' value (base × purity × grams = base × refined grams). Sold batches (also "Sold, not in Sales yet") are out.
+// v36: an open batch's cost is LOCKED when it is batched: its items' cost + its own refining fee. It changes only when
+// items are added from stock or taken out, never with today's base or a later change of the fee setting. The fee is
+// never shown on its own (the user enters it on the Refining tab).
+// Source: the sheet's register "Cost incl. fee" (Refining T) is SUMIF(item costs) + RefiningFee, i.e. the CURRENT fee
+// setting, so it would move when the setting changes. The app therefore reads each open batch's items once (batchItems,
+// read-only, Api.gs v10) and keeps on this device (FC_KEY), per batch: cost = Σ item cost, and fee = the fee it had when
+// the app first saw it (cost incl. fee − Σ item cost), locked from then on. A batch with no fee at all (blank / 0 / not
+// above Σ item cost by more than ₱0.005) takes the current RefiningFee, once, and keeps it. Items added / taken out
+// (count or raw grams change) or an edited cost: Σ item cost is read again, the fee stays.
+// Batch cost = Σ item cost + locked fee. Before its first read: the sheet's cost incl. fee as it is.
+const FC_KEY = 'gold-tracker-batchcost';
+const feeSet = () => Number((S() || {}).refiningFee) || 0;
+const fcSig = b => `${Number(b.items) || 0}|${round2((Number(b.rawG) || 0) * 1000)}`;   // changes when items go in / out
+const fcCif = b => hasNum(b.costInclFee) ? round2(b.costInclFee) : null;
+function batchCost(b, fc) {
+  const k = (fc || load(FC_KEY) || {})[b.id], cif = fcCif(b), ok = k && hasNum(k.cost) && hasNum(k.fee);
+  if (ok && k.sig === fcSig(b)) return k.cost + k.fee;                                 // locked
+  if (ok && cif) return cif - feeSet() + k.fee;                                         // items changed, not re-read yet: sheet Σ + its locked fee
+  return cif || 0;                                                                     // first sight
+}
+let fcBusy = false; const fcTried = new Set();
+async function fcCheck() {   // after a Dashboard draw: read the items of open batches that are new or changed (one at a time)
+  if (fcBusy || !ST || !(Number(ST.version) >= 10) || !connected() || isOffline()) return;
+  const fc = load(FC_KEY) || {}, key = b => b.id + '|' + fcSig(b) + '|' + fcCif(b);
+  const todo = (ST.batches || []).filter(b => { const k = fc[b.id]; return b.status === 'Refining' && !(k && k.sig === fcSig(b) && k.cif === fcCif(b)) && !fcTried.has(key(b)); });
+  if (!todo.length) return;
+  fcBusy = true; let changed = false;
+  try {
+    for (const b of todo) {
+      fcTried.add(key(b)); const before = batchCost(b);
+      let j; try { j = await api('batchItems', { batchId: b.id }); } catch (e) { continue; }
+      const all = load(FC_KEY) || {}, k = all[b.id], cost = round2((j.items || []).reduce((t, x) => t + (Number(x.cost) || 0), 0)), cif = fcCif(b);
+      const fee = k && hasNum(k.fee) ? Number(k.fee) : (cif != null && cif - cost > 0.005 ? round2(cif - cost) : feeSet());
+      all[b.id] = { sig: fcSig(b), cif, cost, fee }; save(FC_KEY, all);
+      if (Math.abs(batchCost(b) - before) > 0.004) changed = true;
+    }
+  } finally { fcBusy = false; }
+  if (changed && view === 'dash' && !$('#modal')) render();
+}
 function refRows() {
-  const base = Number(ST.base) || 0;
+  const base = Number(ST.base) || 0, fc = load(FC_KEY) || {};
   return (ST.batches || []).filter(b => b.status === 'Refining').map(b => {
     const a = beVals(b).actual, act = a != null && a > 0, ref = act ? a : Number(b.refinedG) || 0;
-    return { id: b.id, n: Number(b.items) || 0, raw: Number(b.rawG) || 0, ref, act, c: Number(b.costInclFee) || 0, v: base * ref };
+    return { id: b.id, n: Number(b.items) || 0, raw: Number(b.rawG) || 0, ref, act, c: batchCost(b, fc), v: base * ref };
   });
 }
 function refSum(R) {
@@ -1997,8 +2037,10 @@ function refToday(T) {
 function stockBoxesHTML() {
   const all = stockRows(), today = todayISO();
   const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), S0 = stockSum(all), R = refSum(refRows());
+  S0.c += S0.n ? feeSet() : 0;   // v36: Not refined yet costs as if refined now: + one RefiningFee (Batch refine rule), not shown on its own
   const cl = x => Math.round(x * 1e6) / 1e6;   // float sums: 52.975 + 2.925 must show 55.91 (half up), not 55.90
-  const A = { n: S0.n + R.n, g: cl(S0.g + R.g), c: cl(S0.c + R.c), v: cl(S0.v + R.v), l: S0.l }; A.p = A.v - A.c;
+  const A = { n: S0.n + R.b,   // v36: a refined batch is ONE item (its source items are no longer separate pieces)
+                g: cl(S0.g + R.g), c: cl(S0.c + R.c), v: cl(S0.v + R.v), l: S0.l }; A.p = A.v - A.c;
   ['g', 'ref', 'c', 'v'].forEach(k => { R[k] = cl(R[k]); }); R.p = R.v - R.c; ['g', 'c', 'v'].forEach(k => { S0[k] = cl(S0[k]); T[k] = cl(T[k]); }); S0.p = S0.v - S0.c;
   const rt = refToday(T);
   const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
@@ -2010,13 +2052,13 @@ function stockBoxesHTML() {
         <div class="pl"><span>Est. profit</span><b>${prof(p, 'dash:stock')}</b></div></div>`;
   const parts = `<div class="parts" id="stkParts">
       ${part('pStock', 'Not refined yet', S0.l ? `incl. ${S0.l} not synced` : '', S0.n, S0.g, 'as bought', 'Cost', S0.c, S0.v, S0.p)}
-      ${part('pRef', 'Refined, not sold', `${R.b} batch${R.b === 1 ? '' : 'es'}`, R.n, R.g, R.b ? `as bought · ${grams(R.ref)} g refined${R.act ? (R.act === R.b ? ' (actual)' : ` (${R.act} actual)`) : ''}` : 'as bought', 'Cost incl. fee', R.c, R.v, R.p)}
+      ${part('pRef', 'Refined, not sold', '', R.b ? `${R.b}<small class="src" id="pRefSrc">from ${R.n} item${R.n === 1 ? '' : 's'}</small>` : 0, R.g, R.b ? `as bought · ${grams(R.ref)} g refined${R.act ? (R.act === R.b ? ' (actual)' : ` (${R.act} actual)`) : ''}` : 'as bought', 'Cost', R.c, R.v, R.p)}
     </div>`;
   return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
         <div><span>Items</span><b id="sCount" class="fit"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit"><span class="fv">${grams(A.g)} g</span></b></div>
-        <div><span>Cost${R.b ? ' incl. fee' : ''}</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
+        <div><span>Cost</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
       </div>
       <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>
       ${parts}</div>
