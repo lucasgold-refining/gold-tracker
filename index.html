@@ -454,7 +454,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -502,8 +502,16 @@ const prof = (n, g) => { const has = n != null && !isNaN(n), on = gShown(g);
 // Small eyes, like the main toggle, show the CURRENT state: open eye = shown, crossed eye = hidden; the label says state first.
 const eyeLbl = on => on ? 'Profit shown. Tap to hide' : 'Profit hidden. Tap to show';
 const eyeBtn = g => { const on = gShown(g); return `<button type="button" class="eye" data-g="${g}" aria-pressed="${on}" aria-label="${eyeLbl(on)}" title="${eyeLbl(on)}" onmousedown="event.preventDefault()" onclick="toggleEye(event)">${on ? EYE_OPEN : EYE_OFF}</button>`; };
+// v39: the eyes keep focus where it is on mousedown (PC: you can keep typing). On a phone that also kept a box like
+// "If refined now" base price focused after its keyboard was closed, and Android Chrome re-opens the keyboard for the
+// focused box after every tap, so tapping an eye asked for the base price. A touch tap on an eye / the main toggle
+// now lets go of the typing box first. PC (mouse) behaviour is unchanged.
+function eyeLetGo(e) {
+  const touch = e && e.pointerType ? e.pointerType !== 'mouse' : touchUI(); if (!touch) return;
+  const a = document.activeElement; if (a && a !== document.body && a.matches('input, textarea, select, [contenteditable]')) a.blur();
+}
 function toggleEye(e) {   // one eye: only its own figures change
-  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (e) { e.preventDefault(); e.stopPropagation(); } eyeLetGo(e);
   const b = e && e.currentTarget, g = b && b.dataset.g; if (!g) return;
   setG(g, !gShown(g)); save(TM_KEY, TM); applyEye();
 }
@@ -546,7 +554,7 @@ function fitNums() {
 let fitT = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(fitNums); });
 function toggleTab(e) {   // main toggle: flip its own state, every eye on the tab follows. Never re-draws the page.
-  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (e) { e.preventDefault(); e.stopPropagation(); } eyeLetGo(e);
   const t = view; if (!TABS.includes(t)) return;
   const on = tabState(t) !== 'shown'; TM[t] = TM[t] || {}; TM[t].m = on ? 0 : 1; GROUPS[t].forEach(k => setG(t + ':' + k, on)); save(TM_KEY, TM); applyEye();
 }
