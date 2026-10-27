@@ -107,9 +107,9 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .stk .sumlist{margin-top:0}
 .stk .sumlist div:last-child{border-bottom:0}
 .stkwrap{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
-@media (min-width:900px){.stkwrap{grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:start}}
+@media (min-width:900px){.stkwrap{grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:stretch}.stkwrap>.stk.main{grid-column:1/-1}}
+/* v35: Total in stock spans the whole width (totals + its two parts); under it the week chart (left) and bought today (right), same height */
 /* v10: Total in stock is the main Dashboard card */
-.stkcol{display:grid;gap:12px;min-width:0}
 /* v30: grams bought per day (one Sun–Sat week) */
 .stk.wk{background:#fff;border:2px solid var(--line);padding:14px 14px 10px}
 .wknav{display:flex;gap:6px}
@@ -144,13 +144,30 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .tiles .tile.wide{grid-column:1/-1}
 .stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
 .stk.main h3{font-size:20px;color:var(--brown)}
+.stk.main{container-type:inline-size;container-name:stkmain;min-width:0}
 .stk .figs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 10px}
+@container stkmain (min-width:640px){.stk .figs{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@container stkmain (max-width:299px){.stk .figs{grid-template-columns:minmax(0,1fr)}}   /* v20 rule kept: very narrow phones, one figure per row */
+/* v35: the two parts of Total in stock (not refined yet / refined, not sold): same rows, side by side when there is room */
+.parts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:10px}
+@container stkmain (min-width:560px){.parts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.part{background:#fff;border-radius:10px;padding:8px 12px 4px;border:1px solid #efe4c4;min-width:0}
+.part h4{margin:0 0 2px;font-size:14px;font-weight:800;color:var(--brown);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.part h4 small{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
+.part .pl{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:15px;min-height:28px}
+.part .pl>span{color:var(--muted);font-weight:700;font-size:14px;min-width:0}
+.part .pl>span small{display:block;font-size:12px;font-weight:600}
+.part .pl b{white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+#pRef{border-left:4px solid var(--gold)}
+#dToday .sumlist .tcap{padding:2px 0 0;border-bottom:0;font-size:13px;font-weight:800;color:var(--brown)}
+#dToday .tsum{border-top:2px solid var(--line)}
+#dToday .tsum b{font-size:18px}
 .stk .figs div{background:#fff;border-radius:10px;padding:8px 10px;min-width:0}
 .stk .figs span{display:block;font-size:13px;color:var(--muted);font-weight:700}
 .stk .figs b > .fv{display:inline;font-size:inherit;color:inherit;font-weight:inherit}   /* v20: the number inside the figure (label spans above) */
 .stk .figs b{display:block;font-size:22px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stk .profrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border-radius:10px;padding:8px 10px}
-.stk .profrow span{font-size:14px;color:var(--muted);font-weight:700}
+.stk .profrow>span{font-size:14px;color:var(--muted);font-weight:700}   /* v35: '>' so the profit figure (span.pv) keeps its big size and colour */
 .stk .profrow b{font-size:26px;font-weight:900;white-space:nowrap}
 .all .month{margin:0 0 14px}
 .all .month .val{font-size:38px}
@@ -359,7 +376,6 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
    min 12 px). Digits are tabular. */
 @media (max-width:899px){
   .stkwrap,.tiles{grid-template-columns:minmax(0,1fr)}   /* a long number never widens the column */
-  .stk .figs{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
   .stk .figs b{overflow:visible;text-overflow:clip}
   .stk .profrow b{flex:1 1 auto;text-align:right}
   .tile .val,.month .val{word-break:normal}
@@ -376,6 +392,35 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
   .basepill b{flex:0 0 auto;font-variant-numeric:tabular-nums}
   .basepill small{flex:1 1 auto;min-width:0;max-width:none;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 }
+/* v35: In stock filter (collapsible, in the In stock card) */
+.sfilt{border:1.5px solid var(--line);border-radius:12px;margin:0 0 10px;background:#fffdf6;container-type:inline-size;container-name:sfilt}
+.sfilt.on{border-color:var(--goldline);background:#fffbea}
+.sfilt summary{display:flex;align-items:center;gap:10px;padding:8px 12px;min-height:44px;cursor:pointer;list-style:none;font-weight:800}
+.sfilt summary::-webkit-details-marker{display:none}
+.sfilt summary::after{content:'▾';margin-left:4px;color:var(--muted);transition:transform .15s}
+.sfilt[open] summary::after{transform:rotate(180deg)}
+.sfilt .sft{white-space:nowrap}
+.sfilt .sfcount{flex:1 1 auto;min-width:0;font-size:13px;font-weight:700;color:var(--muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sfilt.on .sfcount{color:var(--brown)}
+.sfx{flex:none;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--goldline);background:#fff;color:var(--brown);font-weight:900;cursor:pointer}
+.sfbody{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:2px 12px 12px}
+@container sfilt (min-width:680px){.sfbody{grid-template-columns:repeat(3,minmax(0,1fr))}.sfact{grid-column:1/-1}}   /* three fields side by side only when each gets ~220 px */
+.sff{min-width:0;display:flex;flex-direction:column;gap:5px}
+.sflbl{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;font-size:14px;font-weight:800;color:var(--brown)}
+.sfseg{display:inline-flex;border:1.5px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.sfseg button{border:0;background:#fff;padding:5px 10px;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;min-height:30px}
+.sfr1,.sfr2{display:flex;align-items:center;gap:6px;min-width:0}
+.sfr1 .sfin,.sfr2 .sfin{flex:1 1 0;min-width:0;width:100%;font-size:16px;padding:9px 10px;margin:0;border:1.5px solid var(--line);border-radius:10px;background:#fff}
+.sfin.bad{border-color:var(--red,#c0392b);background:#fff4f2}
+.sfdash{color:var(--muted);font-weight:800;flex:none}
+.sfhint{font-size:12px;color:var(--muted)}
+.sfact{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:8px}
+.sfact .btn{width:auto;margin:0}
+.sftot{display:flex;justify-content:space-between;gap:10px;padding:10px 4px 2px;font-weight:800;color:var(--brown);font-size:14px;border-top:2px solid var(--line);margin-top:6px}
+.sfnote{margin:-4px 0 12px}
+.sfnote[hidden]{display:none}
+.sfseg button[aria-pressed=true]{background:var(--ink);color:var(--gold2);font-weight:900}
+#sfNone{padding:18px 8px}
 </style>
 </head>
 <body>
@@ -398,7 +443,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -839,7 +884,7 @@ function render() {
   const top = banners(); lastTop = top; const bar = tabBarHTML();
   if (view === 'quote') { app.innerHTML = top + bar + quoteHTML(); bindQuote(); }
   else if (view === 'buy') { app.innerHTML = top + bar + (needData() || (BB.on ? bbHTML() : buyHTML())); if (BB.on) bindBB(); else bindBuy(); }
-  else if (view === 'stock') app.innerHTML = top + bar + (needData() || stockHTML());
+  else if (view === 'stock') { app.innerHTML = top + bar + (needData() || stockHTML()); if ($('#sFilt')) sfUpdate(); }
   else if (view === 'sales') { app.innerHTML = top + bar + (needData() || salesHTML()); bindRN(); bindBE(); }
   else if (view === 'dash') app.innerHTML = top + bar + (needData() || dashHTML());
   applyEye();
@@ -1452,28 +1497,117 @@ function stockGroups(L, P) {
   return out;
 }
 const grpLbl = n => `Bought together · ${n} items`;
-function stockHTML() {
-  loadQ(); const L = (ST.stock || []).slice().sort((a, b) => (a.no || 0) - (b.no || 0)), P = inlineQ(true);
-  if (!L.length && !P.length) return queueHTML(P) + `<div class="card empty">No items in stock${Q.length ? ' in the sheet yet' : ''}.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
-  const T = L.reduce((t, x) => { t.c += x.cost || 0; t.p += x.projProfit || 0; t.w += x.weightBhy || 0; return t; }, { c: 0, p: 0, w: 0 });
-  P.forEach(x => { T.c += x.cost || 0; T.p += qProfit(x) || 0; T.w += x.weightBhy || 0; });
+// ---------- v35: In stock filter (purity exact / range, amount bought ₱, weight g or BHY) ----------
+// Only what the list shows changes: edit / delete act on the row tapped, Batch refine still takes ALL In stock items
+// (a note says so while a filter hides some), Add from stock (Refining tab) lists every item. Kept until cleared or reload.
+const SF0 = { open: false, pm: 'exact', p: '', pmin: '', pmax: '', amin: '', amax: '', wu: 'g', wmin: '', wmax: '' };
+let SF = Object.assign({}, SF0);
+// Purity text -> whole hundredths of a % (85.35 -> 8535) at the typed precision; a 0.xxxx fraction is read as a fraction.
+function sfPur(t) {
+  t = String(t == null ? '' : t).replace(/[\s,%]/g, ''); if (t === '') return null;
+  if (!/^\d*\.?\d*$/.test(t) || t === '.') return NaN;
+  let n = Number(t), d = (t.split('.')[1] || '').length;
+  if (n <= 1 && n > 0) { n *= 100; d = Math.max(0, d - 2); }
+  if (!(n > 0 && n <= 100)) return NaN;
+  d = Math.min(d, 2); const k = Math.pow(10, 2 - d), lo = Math.floor(Math.round(n * 100) / k + 1e-9) * k;
+  return { lo, hi: lo + k - 1 };
+}
+const sfNum = t => { const n = parseNum(t); return n === null ? null : (isNaN(n) || n < 0 ? NaN : n); };
+function sfRanges() {   // { p: [lo, hi] | null, a, w, bad: [field ids] }
+  const bad = [], rng = (a, b, ia, ib, f) => { let x = f(a), y = f(b); if (Number.isNaN(x) || (x && Number.isNaN(x.lo))) { bad.push(ia); x = null; } if (Number.isNaN(y)) { bad.push(ib); y = null; }
+    return x == null && y == null ? null : [x == null ? -Infinity : x, y == null ? Infinity : y]; };
+  let p = null;
+  if (SF.pm === 'exact') { const e = sfPur(SF.p); if (Number.isNaN(e)) bad.push('sfP'); else if (e) p = [e.lo, e.hi]; }
+  else { p = rng(SF.pmin, SF.pmax, 'sfPmin', 'sfPmax', t => { const e = sfPur(t); return e == null || Number.isNaN(e) ? e : e.lo; }); }
+  const a = rng(SF.amin, SF.amax, 'sfAmin', 'sfAmax', sfNum), w = rng(SF.wmin, SF.wmax, 'sfWmin', 'sfWmax', sfNum);
+  [p, a, w].forEach(r => { if (r && r[0] > r[1]) r.reverse(); });   // min above max: read the other way round
+  return { p, a, w, bad };
+}
+const sfOn = R => !!(R.p || R.a || R.w);
+function sfMatch(it, R) {
+  const bhy = (S() || {}).bhyPerGram || 2, P = Math.round((Number(it.purity) || 0) * 10000), c = Number(it.cost) || 0;
+  const w = SF.wu === 'bhy' ? Number(it.weightBhy) || 0 : (hasNum(it.weightBhy) ? Number(it.weightBhy) / bhy : Number(it.grams) || 0);
+  const inR = (r, v, eps) => !r || (v >= r[0] - eps && v <= r[1] + eps);
+  return inR(R.p, P, 0) && inR(R.a, c, 0.005) && inR(R.w, w, 0.0005);
+}
+const sfIn = (id, v, ph, lbl) => `<input id="${id}" class="sfin" data-k="${id.slice(2).toLowerCase()}" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="${ph}" aria-label="${lbl}" value="${esc(v)}">`;
+const sfSeg = (k, cur, opts) => `<span class="sfseg" role="group">${opts.map(([v, t]) => `<button type="button" data-${k}="${v}" aria-pressed="${cur === v}" onclick="sfSet('${k}','${v}')">${t}</button>`).join('')}</span>`;
+function sfPanelHTML(V) {
+  const R = V.R, on = sfOn(R);
+  return `<details class="sfilt${on ? ' on' : ''}" id="sFilt"${SF.open ? ' open' : ''} ontoggle="SF.open=this.open">
+    <summary><span class="sft">🔎 Filter</span><span class="sfcount" id="sfCount">${on ? `${V.shown} of ${V.total} match` : 'Purity · amount · weight'}</span>${on ? '<button type="button" class="sfx" id="sfX" aria-label="Clear filter" onclick="event.preventDefault();event.stopPropagation();sfClear()">✕</button>' : ''}</summary>
+    <div class="sfbody">
+      <div class="sff"><div class="sflbl"><span>Purity %</span>${sfSeg('pm', SF.pm, [['exact', 'Exact'], ['range', 'Range']])}</div>
+        ${SF.pm === 'exact' ? `<div class="sfr1">${sfIn('sfP', SF.p, 'e.g. 85.35', 'Purity %, exact')}</div><div class="sfhint">85 finds 85.00–85.99% · 85.3 finds 85.30–85.39%</div>`
+          : `<div class="sfr2">${sfIn('sfPmin', SF.pmin, 'Min %', 'Purity % from')}<span class="sfdash">–</span>${sfIn('sfPmax', SF.pmax, 'Max %', 'Purity % to')}</div>`}</div>
+      <div class="sff"><div class="sflbl"><span>Amount bought ₱</span></div>
+        <div class="sfr2">${sfIn('sfAmin', SF.amin, 'Min ₱', 'Amount bought from')}<span class="sfdash">–</span>${sfIn('sfAmax', SF.amax, 'Max ₱', 'Amount bought to')}</div></div>
+      <div class="sff"><div class="sflbl"><span>Weight</span>${sfSeg('wu', SF.wu, [['g', 'grams'], ['bhy', 'BHY']])}</div>
+        <div class="sfr2">${sfIn('sfWmin', SF.wmin, 'Min ' + (SF.wu === 'g' ? 'g' : 'BHY'), 'Weight from')}<span class="sfdash">–</span>${sfIn('sfWmax', SF.wmax, 'Max ' + (SF.wu === 'g' ? 'g' : 'BHY'), 'Weight to')}</div></div>
+      <div class="sfact"><span id="sfRes" class="muted">${on ? `Showing ${V.shown} of ${V.total} items` : `All ${V.total} items shown`}</span><button type="button" class="btn light sm" id="sfClear" onclick="sfClear()"${on || Object.keys(SF0).some(k => k !== 'open' && k !== 'pm' && k !== 'wu' && SF[k] !== '') ? '' : ' disabled'}>Clear filter</button></div>
+    </div></details>`;
+}
+// The list + totals for the current filter. Items saved together stay in their box; a box shows only its matching
+// items ("2 of 3 match") and is left out when none match.
+function stockView() {
+  loadQ(); const L = (ST.stock || []).slice().sort((a, b) => (a.no || 0) - (b.no || 0)), P = inlineQ(true), R = sfRanges(), on = sfOn(R);
+  const G = stockGroups(L, P).map(g => ({ qid: g.qid, n: g.rows.length, rows: on ? g.rows.filter(x => sfMatch(x.it, R)) : g.rows })).filter(g => g.rows.length);
+  const T = { c: 0, p: 0, w: 0, n: 0 };
+  G.forEach(g => g.rows.forEach(x => { const it = x.it; T.n++; T.c += it.cost || 0; T.w += it.weightBhy || 0; T.p += (x.q ? qProfit(it) : it.projProfit) || 0; }));
+  return { L, P, R, on, G, T, shown: T.n, total: L.length + P.length };
+}
+function stockBodyHTML(V) {
+  const { G, T, on } = V;
+  if (!G.length) return `<div class="empty" id="sfNone">No items match this filter.<br><button type="button" class="btn light sm" onclick="sfClear()">Clear filter</button></div>`;
   const pendTR = it => `<tr class="pend" data-rid="${esc(it.rid)}"><td>⏳ ${qBadge(it)}${qAt(it) ? tsHTML(qAt(it)) : ''}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(qSell(it))}</td><td><b>${prof(qProfit(it), 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit unsynced purchase" onclick="qEdit('${esc(it.rid)}')">✏️</button> <button class="x" aria-label="Delete unsynced purchase" onclick="qDel('${esc(it.rid)}')">🗑️</button></td></tr>`;
-  const itemTR = it => `<tr><td>#${esc(dno(it))}${tsHTML(it.at, it.date)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
+  const itemTR = it => `<tr data-no="${Number(it.no)}"><td>#${esc(dno(it))}${tsHTML(it.at, it.date)}</td><td>${wt(it.weightBhy)}</td><td>${pct(it.purity)}</td><td>${peso(it.cost)}</td><td>${peso(it.projSell)}</td><td><b>${prof(it.projProfit, 'stock:list')}</b></td>
       <td class="acts"><button class="ed" aria-label="Edit #${esc(dno(it))}" onclick="editItem(${Number(it.no)})">✏️</button> <button class="x" aria-label="Delete #${esc(dno(it))}" onclick="delItem(${Number(it.no)})">🗑️</button></td></tr>`;
-  const G = stockGroups(L, P), tr = x => x.q ? pendTR(x.it) : itemTR(x.it), mob = x => x.q ? qRowHTML(x.it) : itemRowHTML(x.it);
+  const tr = x => x.q ? pendTR(x.it) : itemTR(x.it), mob = x => x.q ? qRowHTML(x.it) : itemRowHTML(x.it);
+  const lbl = g => g.rows.length < g.n ? `${grpLbl(g.n)} · ${g.rows.length} match` : grpLbl(g.n);
+  const boxed = g => g.n > 1;   // a box stays a box even when the filter leaves one of its items
   let body = '', open = false;   // singles share a <tbody>; each group gets its own boxed one
   G.forEach(g => {
-    if (g.rows.length > 1) { body += `${open ? '</tbody>' : ''}<tbody class="bgrp" data-qid="${esc(g.qid)}"><tr class="bglbl"><td colspan="7">${grpLbl(g.rows.length)}</td></tr>${g.rows.map(tr).join('')}</tbody>`; open = false; }
+    if (boxed(g)) { body += `${open ? '</tbody>' : ''}<tbody class="bgrp" data-qid="${esc(g.qid)}"><tr class="bglbl"><td colspan="7">${lbl(g)}</td></tr>${g.rows.map(tr).join('')}</tbody>`; open = false; }
     else { body += (open ? '' : '<tbody>') + tr(g.rows[0]); open = true; }
   });
   const table = `<table class="desk-only"><thead><tr><th>${noHdr()}</th><th>Weight (BHY)</th><th>Purity</th><th>Cost</th><th>Projected sell</th><th>Projected profit</th><th></th></tr></thead>${body}${open ? '' : '<tbody>'}
-    <tr class="tot"><td>Total</td><td>${wt(T.w)}</td><td></td><td>${peso(T.c)}</td><td></td><td><b>${prof(T.p, 'stock:list')}</b></td><td></td></tr></tbody></table>`;
-  const list = G.map(g => g.rows.length > 1 ? `<div class="bgrp" data-qid="${esc(g.qid)}"><div class="bglbl">${grpLbl(g.rows.length)}</div>${g.rows.map(mob).join('')}</div>` : mob(g.rows[0])).join('');
-  return queueHTML(P) + refineBtnHTML(L.length) + `
-    <div class="card" id="stockCard"><h2><span>In stock <span class="muted">${L.length} items${P.length ? ` · ${P.length} syncing` : ''}</span></span>${eyeBtn('stock:list')}</h2>
-    ${table}<div class="mobile-only">${list}</div></div>`;
+    <tr class="tot"><td>${on ? `Total <small class="muted" id="sfTotN">${T.n} shown</small>` : 'Total'}</td><td>${wt(T.w)}</td><td></td><td>${peso(T.c)}</td><td></td><td><b>${prof(T.p, 'stock:list')}</b></td><td></td></tr></tbody></table>`;
+  const list = G.map(g => boxed(g) ? `<div class="bgrp" data-qid="${esc(g.qid)}"><div class="bglbl">${lbl(g)}</div>${g.rows.map(mob).join('')}</div>` : mob(g.rows[0])).join('')
+    + (on ? `<div class="sftot" id="sfMobTot"><span>${T.n} shown</span><span>${wt(T.w)} BHY · ${peso(T.c)}</span></div>` : '');
+  return `${table}<div class="mobile-only">${list}</div>`;
 }
+const stockHeadHTML = V => `<span>In stock <span class="muted" id="stockN">${V.L.length} items${V.P.length ? ` · ${V.P.length} syncing` : ''}${V.on ? ` · ${V.shown} shown` : ''}</span></span>${eyeBtn('stock:list')}`;
+const sfRefNote = V => V.on && V.shown < V.total ? `Batch refine takes all ${V.L.length} In stock items, also the ${V.total - V.shown} the filter hides.` : '';
+function stockHTML() {
+  const V = stockView(), { L, P } = V;
+  if (!L.length && !P.length) return queueHTML(P) + `<div class="card empty">No items in stock${Q.length ? ' in the sheet yet' : ''}.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
+  const rn = sfRefNote(V);
+  return queueHTML(P) + refineBtnHTML(L.length) + `<div class="note sfnote" id="sfRefNote"${rn ? '' : ' hidden'}>${esc(rn)}</div>
+    <div class="card" id="stockCard"><h2 id="stockHead">${stockHeadHTML(V)}</h2>
+    ${sfPanelHTML(V)}<div id="stockBody">${stockBodyHTML(V)}</div></div>`;
+}
+// Typing in a filter box redraws only the list, the counts and the note (the boxes keep focus and caret).
+function sfUpdate() {
+  if (view !== 'stock' || !$('#stockBody')) return;
+  const V = stockView(), on = V.on;
+  $('#stockBody').innerHTML = stockBodyHTML(V); $('#stockHead').innerHTML = stockHeadHTML(V);
+  const f = $('#sFilt'); f.classList.toggle('on', on);
+  $('#sfCount').textContent = on ? `${V.shown} of ${V.total} match` : 'Purity · amount · weight';
+  let x = $('#sfX'); if (on && !x) f.querySelector('summary').insertAdjacentHTML('beforeend', '<button type="button" class="sfx" id="sfX" aria-label="Clear filter" onclick="event.preventDefault();event.stopPropagation();sfClear()">✕</button>'); else if (!on && x) x.remove();
+  $('#sfRes').textContent = on ? `Showing ${V.shown} of ${V.total} items` : `All ${V.total} items shown`;
+  $('#sfClear').disabled = !Object.keys(SF0).some(k => k !== 'open' && k !== 'pm' && k !== 'wu' && SF[k] !== '');
+  document.querySelectorAll('#sFilt .sfin').forEach(el => el.classList.toggle('bad', V.R.bad.includes(el.id)));
+  const n = $('#sfRefNote'), rn = sfRefNote(V); if (n) { n.textContent = rn; n.hidden = !rn; }
+  applyEye();
+}
+function sfSet(k, v) { SF[k] = v; SF.open = true; render(); const el = document.querySelector('#sFilt .sfin'); if (el && !touchUI()) el.focus(); }
+function sfClear() { const o = SF.open; SF = Object.assign({}, SF0, { open: o, pm: SF.pm, wu: SF.wu }); render(); }
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !el.classList || !el.classList.contains('sfin')) return;
+  const K = { p: 'p', pmin: 'pmin', pmax: 'pmax', amin: 'amin', amax: 'amax', wmin: 'wmin', wmax: 'wmax' }[el.dataset.k]; if (!K) return;
+  SF[K] = el.value; sfUpdate();
+});
 function stockItem(no) { return (ST.stock || []).find(x => Number(x.no) === Number(no)); }
 function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="sheet" role="dialog">${html}</div>`; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) closeModal(); }); applyEye(); return m; }
 function closeModal() { const m = $('#modal'); if (m) { m.remove(); applyEye(); } }
@@ -1838,21 +1972,59 @@ function stockSum(L) {
   const t = L.reduce((a, x) => { a.n++; a.g += x.grams; a.c += x.cost; a.v += base * x.purity * x.grams; a.l += x.local ? 1 : 0; return a; }, { n: 0, g: 0, c: 0, v: 0, l: 0 });
   t.p = t.v - t.c; return t;
 }
+// v35: gold in refining batches that are not sold yet (status "Refining") is still stock. Per batch: items and raw
+// grams as bought (the sheet's Refining register), cost incl. fee, and its value at today's base × its refined weight
+// (the actual refined weight when one is typed on the batch, else the computed refined grams), the same rule as the
+// stock items' value (base × purity × grams = base × refined grams). Sold batches (also "Sold, not in Sales yet") are out.
+function refRows() {
+  const base = Number(ST.base) || 0;
+  return (ST.batches || []).filter(b => b.status === 'Refining').map(b => {
+    const a = beVals(b).actual, act = a != null && a > 0, ref = act ? a : Number(b.refinedG) || 0;
+    return { id: b.id, n: Number(b.items) || 0, raw: Number(b.rawG) || 0, ref, act, c: Number(b.costInclFee) || 0, v: base * ref };
+  });
+}
+function refSum(R) {
+  const t = R.reduce((a, x) => { a.b++; a.n += x.n; a.g += x.raw; a.ref += x.ref; a.c += x.c; a.v += x.v; a.act += x.act ? 1 : 0; return a; }, { b: 0, n: 0, g: 0, ref: 0, c: 0, v: 0, act: 0 });
+  t.p = t.v - t.c; return t;
+}
+// Grams bought today that already sit in an unsold refining batch: today's grams bought (getState.daily, every purchase
+// + unsynced ones) − sold today (dailySold) − today's items still In stock. Needs Api.gs v10 (dailySold); else 0.
+function refToday(T) {
+  const D = weekDaily(), t = todayISO(); if (!D.two) return 0;
+  const g = (D.out[t] || 0) - (D.sold[t] || 0) - T.g;
+  return g > 0.005 ? g : 0;
+}
 function stockBoxesHTML() {
   const all = stockRows(), today = todayISO();
-  const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), A = stockSum(all);
+  const T = stockSum(all.filter(x => x.date.slice(0, 10) === today)), S0 = stockSum(all), R = refSum(refRows());
+  const cl = x => Math.round(x * 1e6) / 1e6;   // float sums: 52.975 + 2.925 must show 55.91 (half up), not 55.90
+  const A = { n: S0.n + R.n, g: cl(S0.g + R.g), c: cl(S0.c + R.c), v: cl(S0.v + R.v), l: S0.l }; A.p = A.v - A.c;
+  ['g', 'ref', 'c', 'v'].forEach(k => { R[k] = cl(R[k]); }); R.p = R.v - R.c; ['g', 'c', 'v'].forEach(k => { S0[k] = cl(S0[k]); T[k] = cl(T[k]); }); S0.p = S0.v - S0.c;
+  const rt = refToday(T);
   const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
-  return `<div class="stkwrap" id="stockMain"><div class="stkcol">
+  const part = (id, ttl, sub, n, g, gsub, clbl, c, v, p) => `<div class="part" id="${id}"><h4><span>${ttl}</span>${sub ? `<small>${sub}</small>` : ''}</h4>
+        <div class="pl"><span>Items</span><b>${n}</b></div>
+        <div class="pl"><span>Grams${gsub ? `<small>${gsub}</small>` : ''}</span><b>${grams(g)} g</b></div>
+        <div class="pl"><span>${clbl}</span><b>${peso(c)}</b></div>
+        <div class="pl"><span>Est. value</span><b>${peso(v)}</b></div>
+        <div class="pl"><span>Est. profit</span><b>${prof(p, 'dash:stock')}</b></div></div>`;
+  const parts = `<div class="parts" id="stkParts">
+      ${part('pStock', 'Not refined yet', S0.l ? `incl. ${S0.l} not synced` : '', S0.n, S0.g, 'as bought', 'Cost', S0.c, S0.v, S0.p)}
+      ${part('pRef', 'Refined, not sold', `${R.b} batch${R.b === 1 ? '' : 'es'}`, R.n, R.g, R.b ? `as bought · ${grams(R.ref)} g refined${R.act ? (R.act === R.b ? ' (actual)' : ` (${R.act} actual)`) : ''}` : 'as bought', 'Cost incl. fee', R.c, R.v, R.p)}
+    </div>`;
+  return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
         <div><span>Items</span><b id="sCount" class="fit"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit"><span class="fv">${grams(A.g)} g</span></b></div>
-        <div><span>Cost</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
+        <div><span>Cost${R.b ? ' incl. fee' : ''}</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
       </div>
-      <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>${loc(A)}</div>
-    ${weekHTML()}</div>
+      <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>
+      ${parts}</div>
+    ${weekHTML()}
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
-      <div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${grams(T.g)} g</b></div>
-      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div></div>${loc(T)}</div></div>`;
+      ${rt ? '<div class="tcap" id="tCap"><span>Not refined yet</span></div>' : ''}<div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${grams(T.g)} g</b></div>
+      <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div>
+      ${rt ? `<div id="tRefRow"><span>Refined, not sold</span><b id="tRef">${grams(rt)} g</b></div><div class="tsum" id="tTotRow"><span>Total grams</span><b id="tTotG">${grams(cl(T.g + rt))} g</b></div>` : ''}</div>${loc(T)}</div></div>`;
 }
 
 // ---------- v30: grams bought per day, one Sunday–Saturday week (Manila), under Total in stock ----------
