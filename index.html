@@ -145,32 +145,40 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
 .stk.main h3{font-size:20px;color:var(--brown)}
 .stk.main{container-type:inline-size;container-name:stkmain;min-width:0}
-.stk .figs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 10px}
+.stk .figs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}   /* v38: 4/8 px spacing scale */
 @container stkmain (min-width:640px){.stk .figs{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @container stkmain (max-width:299px){.stk .figs{grid-template-columns:minmax(0,1fr)}}   /* v20 rule kept: very narrow phones, one figure per row */
 /* v35: the two parts of Total in stock (not refined yet / refined, not sold): same rows, side by side when there is room */
-.parts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:10px}
+.parts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:8px}
 @container stkmain (min-width:560px){.parts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .part{background:#fff;border-radius:10px;padding:8px 12px 4px;border:1px solid #efe4c4;min-width:0}
 .part h4{margin:0 0 2px;font-size:14px;font-weight:800;color:var(--brown);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .part h4 small{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
-.part .pl{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:15px;min-height:28px}
+.part .pl{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:15px;min-height:28px}   /* v38: label | right-aligned figure */
 .part .pl>span{color:var(--muted);font-weight:700;font-size:14px;min-width:0}
-.part .pl>span small{display:block;font-size:12px;font-weight:600}
+.part .pl>span small{display:block;font-size:12px;font-weight:600;line-height:1.3;margin-top:1px}
 .part .pl b{white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
 #pRef{border-left:4px solid var(--gold)}
 .part .pl b small.src{font-size:12px;font-weight:600;color:var(--muted);margin-left:6px}   /* v36: 1 batch = 1 item; its source count, subtle */
-#dToday .sumlist .tcapr{display:block;font-size:12px;font-weight:600;color:var(--muted)}
+#dToday .sumlist .tcapr{display:block;font-size:12px;font-weight:600;color:var(--muted);line-height:1.3;margin-top:1px}
+#dToday .sumlist div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:12px;font-size:15px}
+#dToday .sumlist div>span{min-width:0}
+#dToday .sumlist div b{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#dToday .sumlist .tcap{display:block}
 #dToday .sumlist .tcap{padding:2px 0 0;border-bottom:0;font-size:13px;font-weight:800;color:var(--brown)}
 #dToday .tsum{border-top:2px solid var(--line)}
 #dToday .tsum b{font-size:18px}
-.stk .figs div{background:#fff;border-radius:10px;padding:8px 10px;min-width:0}
+.stk .figs div{background:#fff;border-radius:10px;padding:8px 12px;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:2px}   /* v38: figure at the bottom, so a row's numbers line up */
 .stk .figs span{display:block;font-size:13px;color:var(--muted);font-weight:700}
-.stk .figs b > .fv{display:inline;font-size:inherit;color:inherit;font-weight:inherit}   /* v20: the number inside the figure (label spans above) */
-.stk .figs b{display:block;font-size:22px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stk .profrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border-radius:10px;padding:8px 10px}
+.stk .figs b > .fv{display:inline-block;font-size:inherit;color:inherit;font-weight:inherit;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stk .figs small.fsub{display:block;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;margin-top:1px}   /* v38: '@ ₱8,023.75/g' under 'Est. value' */
+.fit > .pv{display:inline-block;white-space:nowrap;font-variant-numeric:tabular-nums}
+.nw{white-space:nowrap}   /* v20: the number inside the figure (label spans above) */
+.stk .figs b{display:block;font-size:clamp(18px,5.6cqi,22px);font-weight:900;white-space:nowrap;overflow:visible;line-height:1.2}
+.stk .profrow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border-radius:10px;padding:8px 12px}
 .stk .profrow>span{font-size:14px;color:var(--muted);font-weight:700}   /* v35: '>' so the profit figure (span.pv) keeps its big size and colour */
-.stk .profrow b{font-size:26px;font-weight:900;white-space:nowrap}
+.stk .profrow b{font-size:clamp(20px,6.8cqi,26px);font-weight:900;white-space:nowrap;flex:1 1 auto;min-width:0;text-align:right;line-height:1.2}
+.stk .profrow>span{flex:none}
 .all .month{margin:0 0 14px}
 .all .month .val{font-size:38px}
 .bq{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
@@ -302,9 +310,11 @@ div.bgrp .bglbl{font-size:12px;font-weight:700;color:var(--brown);padding:5px 0 
 .bediff.pos{color:var(--green)}.bediff.neg{color:var(--red)}
 @media (max-width:899px){.best{padding:10px}.best .row2{grid-template-columns:1fr;gap:0}.best input{font-size:24px}}
 .hidden{display:none!important}
-.eye{border:0;background:#efe9da;color:var(--ink);border-radius:12px;min-width:46px;min-height:46px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 10px;flex:none;vertical-align:middle}
-.eye svg{width:24px;height:24px}
-.eye[aria-pressed=true]{background:var(--ink);color:var(--gold2)}
+.eye{border:0;background:transparent;color:var(--ink);border-radius:12px;min-width:48px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;vertical-align:middle;position:relative;isolation:isolate}
+.eye::before{content:'';position:absolute;inset:4px;border-radius:10px;background:#efe9da;z-index:-1}   /* v38: 40 px button drawn inside a 48 px tap area */
+.eye svg{width:22px;height:22px}
+.eye[aria-pressed=true]{background:transparent;color:var(--gold2)}
+.eye[aria-pressed=true]::before{background:var(--ink)}
 .pv.masked{letter-spacing:1px;color:var(--muted)!important}
 .month{background:var(--goldbg);border:2px solid var(--goldline);border-radius:16px;padding:18px 16px;margin-bottom:12px;text-align:center}
 .month .lbl{font-size:18px;font-weight:800;color:var(--brown)}
@@ -377,13 +387,12 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
    size; only when it would not fit its box does fitNums() step it down (never cut, never wrapped, no ellipsis,
    min 12 px). Digits are tabular. */
 @media (max-width:899px){
+  .stk.main{padding:12px 12px 12px 14px}   /* v38: 12 px inside the card on phones, more room for the figures */
   .stkwrap,.tiles{grid-template-columns:minmax(0,1fr)}   /* a long number never widens the column */
-  .stk .figs b{overflow:visible;text-overflow:clip}
-  .stk .profrow b{flex:1 1 auto;text-align:right}
   .tile .val,.month .val{word-break:normal}
   .month .val{flex:1 1 auto}
   .fit{min-width:0;display:block}
-  .fit > .fv, .fit > .pv, .stk .figs b.fit > .fv{display:block;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .fit > .fv, .fit > .pv, .stk .figs b.fit > .fv{display:inline-block;white-space:nowrap;font-variant-numeric:tabular-nums}
   .month .sec b,.tile .muted .pv{white-space:nowrap;font-variant-numeric:tabular-nums}
 }
 @media (max-width:899px){
@@ -445,7 +454,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -517,20 +526,22 @@ function applyEye() {
     b.dataset.state = st; b.setAttribute('aria-pressed', String(st === 'hidden')); b.setAttribute('aria-label', t.aria); b.title = t.aria; b.innerHTML = t.html; }
   if (view === 'dash') fitNums();
 }
-// v20, phone only (< 900 px): shrink a Dashboard number only when it does not fit its box. Runs after every draw
-// and on resize / rotation; on a PC-width screen the v19 sizes stay (inline sizes are cleared).
+// v20 / v38: shrink a Dashboard number only when it does not fit its box (never cut, wrapped or ellipsised, min 11 px).
+// v38: runs at every width (PC boxes can be narrow too) and measures the number's real width (inline-block), so it
+// also holds with the phone's text-size setting. Numbers with the same data-fg (the four Total in stock figures) share
+// the smallest size any of them needs, so the four boxes always look the same. Runs after every draw / eye / resize.
 const MOBILE_MQ = '(max-width:899px)';   // same breakpoint as .desk-only / .mobile-only ("Last added" on Buy)
 function fitNums() {
-  const phone = matchMedia(MOBILE_MQ).matches;
-  document.querySelectorAll('#app .fit').forEach(c => {
-    const el = c.firstElementChild && c.firstElementChild.matches('.fv, .pv') ? c.firstElementChild : null;
-    if (!el) return; el.style.fontSize = ''; if (!phone || !el.offsetParent) return;
-    for (let i = 0; i < 4 && el.scrollWidth > el.clientWidth; i++) {
-      const fs = parseFloat(getComputedStyle(el).fontSize);
-      el.style.fontSize = Math.max(12, Math.floor(fs * el.clientWidth / el.scrollWidth * 0.98 * 10) / 10) + 'px';
-      if (fs <= 12) break;
-    }
+  const L = [...document.querySelectorAll('#app .fit')].map(c => ({ c, el: c.firstElementChild && c.firstElementChild.matches('.fv, .pv') ? c.firstElementChild : null })).filter(x => x.el);
+  L.forEach(x => { x.el.style.fontSize = ''; });
+  const grp = {};
+  L.forEach(x => {
+    if (!x.el.offsetParent) return;
+    const avail = x.c.clientWidth, w = x.el.getBoundingClientRect().width, fs = parseFloat(getComputedStyle(x.el).fontSize);
+    x.base = fs; x.fs = w > avail + 0.5 && w > 0 ? Math.max(11, Math.floor(fs * avail / w * 0.97 * 10) / 10) : fs;
+    const g = x.c.dataset.fg; if (g) grp[g] = Math.min(grp[g] == null ? x.fs : grp[g], x.fs);
   });
+  L.forEach(x => { if (x.fs == null) return; const f = x.c.dataset.fg ? grp[x.c.dataset.fg] : x.fs; if (f < x.base - 0.05) x.el.style.fontSize = f + 'px'; });
 }
 let fitT = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(fitNums); });
@@ -2057,13 +2068,13 @@ function stockBoxesHTML() {
         <div class="pl"><span>Est. profit</span><b>${prof(p, 'dash:stock')}</b></div></div>`;
   const parts = `<div class="parts" id="stkParts">
       ${part('pStock', 'Not refined yet', S0.l ? `incl. ${S0.l} not synced` : '', S0.n, S0.g, 'as bought', 'Cost', S0.c, S0.v, S0.p)}
-      ${part('pRef', 'Refined, not sold', '', R.b ? `${R.b}<small class="src" id="pRefSrc">from ${R.n} item${R.n === 1 ? '' : 's'}</small>` : 0, R.ref, R.b ? `<span id="pRefGcap">refined ${R.act ? (R.act === R.b ? '(actual)' : `(${R.act} of ${R.b} actual)`) : '(est.)'} · ${grams(R.g)} g as bought</span>` : 'refined', 'Cost', R.c, R.v, R.p)}
+      ${part('pRef', 'Refined, not sold', '', R.b ? `${R.b}<small class="src" id="pRefSrc">from ${R.n} item${R.n === 1 ? '' : 's'}</small>` : 0, R.ref, R.b ? `<span id="pRefGcap"><span class="nw">refined ${R.act ? (R.act === R.b ? '(actual)' : `(${R.act} of ${R.b} actual)`) : '(est.)'} ·</span> <span class="nw">${grams(R.g)} g as bought</span></span>` : 'refined', 'Cost', R.c, R.v, R.p)}
     </div>`;
   return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
-        <div><span>Items</span><b id="sCount" class="fit"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit"><span class="fv">${grams(A.g)} g</span></b></div>
-        <div><span>Cost</span><b id="sCost" class="fit"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value at ${peso(ST.base)} / g</span><b id="sValue" class="fit"><span class="fv">${peso(A.v)}</span></b></div>
+        <div><span>Items</span><b id="sCount" class="fit" data-fg="top"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit" data-fg="top"><span class="fv">${grams(A.g)} g</span></b></div>
+        <div><span>Cost</span><b id="sCost" class="fit" data-fg="top"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value<small class="fsub" id="sValueAt">@ ${peso(ST.base)}/g</small></span><b id="sValue" class="fit" data-fg="top"><span class="fv">${peso(A.v)}</span></b></div>
       </div>
       <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>
       ${parts}</div>
@@ -2071,7 +2082,7 @@ function stockBoxesHTML() {
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
       ${rt ? '<div class="tcap" id="tCap"><span>Not refined yet</span></div>' : ''}<div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${grams(T.g)} g</b></div>
       <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div>
-      ${rt ? `<div id="tRefRow"><span>Refined, not sold<small class="tcapr">refined weight · ${grams(rtRaw)} g as bought</small></span><b id="tRef">${grams(rt)} g</b></div><div class="tsum" id="tTotRow"><span>Total grams</span><b id="tTotG">${grams(cl(T.g + rt))} g</b></div>` : ''}</div>${loc(T)}</div></div>`;
+      ${rt ? `<div id="tRefRow"><span>Refined, not sold<small class="tcapr"><span class="nw">refined weight ·</span> <span class="nw">${grams(rtRaw)} g as bought</span></small></span><b id="tRef">${grams(rt)} g</b></div><div class="tsum" id="tTotRow"><span>Total grams</span><b id="tTotG">${grams(cl(T.g + rt))} g</b></div>` : ''}</div>${loc(T)}</div></div>`;
 }
 
 // ---------- v30: grams bought per day, one Sunday–Saturday week (Manila), under Total in stock ----------
