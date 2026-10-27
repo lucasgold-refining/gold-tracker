@@ -160,6 +160,7 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .part .pl b{white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
 #pRef{border-left:4px solid var(--gold)}
 .part .pl b small.src{font-size:12px;font-weight:600;color:var(--muted);margin-left:6px}   /* v36: 1 batch = 1 item; its source count, subtle */
+#dToday .sumlist .tcapr{display:block;font-size:12px;font-weight:600;color:var(--muted)}
 #dToday .sumlist .tcap{padding:2px 0 0;border-bottom:0;font-size:13px;font-weight:800;color:var(--brown)}
 #dToday .tsum{border-top:2px solid var(--line)}
 #dToday .tsum b{font-size:18px}
@@ -444,7 +445,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -2040,9 +2041,13 @@ function stockBoxesHTML() {
   S0.c += S0.n ? feeSet() : 0;   // v36: Not refined yet costs as if refined now: + one RefiningFee (Batch refine rule), not shown on its own
   const cl = x => Math.round(x * 1e6) / 1e6;   // float sums: 52.975 + 2.925 must show 55.91 (half up), not 55.90
   const A = { n: S0.n + R.b,   // v36: a refined batch is ONE item (its source items are no longer separate pieces)
-                g: cl(S0.g + R.g), c: cl(S0.c + R.c), v: cl(S0.v + R.v), l: S0.l }; A.p = A.v - A.c;
+                g: cl(S0.g + R.ref),   // v37: not refined (as bought) + batches' refined weight, the same grams the values use
+                c: cl(S0.c + R.c), v: cl(S0.v + R.v), l: S0.l }; A.p = A.v - A.c;
   ['g', 'ref', 'c', 'v'].forEach(k => { R[k] = cl(R[k]); }); R.p = R.v - R.c; ['g', 'c', 'v'].forEach(k => { S0[k] = cl(S0[k]); T[k] = cl(T[k]); }); S0.p = S0.v - S0.c;
-  const rt = refToday(T);
+  // v37: today's gold already in an open batch, shown at its refined share: as-bought grams × (open batches' refined
+  // grams ÷ their as-bought grams), the same weight basis as the Refined, not sold line (actual where typed, else est.).
+  // The app cannot tell which batch today's items went into, so the open batches' combined ratio is used.
+  const rtRaw = refToday(T), rt = rtRaw && R.g > 0 ? cl(rtRaw * R.ref / R.g) : 0;
   const loc = t => t.l ? ` <span class="muted" style="font-size:13px">incl. ${t.l} not synced yet</span>` : '';
   const part = (id, ttl, sub, n, g, gsub, clbl, c, v, p) => `<div class="part" id="${id}"><h4><span>${ttl}</span>${sub ? `<small>${sub}</small>` : ''}</h4>
         <div class="pl"><span>Items</span><b>${n}</b></div>
@@ -2052,7 +2057,7 @@ function stockBoxesHTML() {
         <div class="pl"><span>Est. profit</span><b>${prof(p, 'dash:stock')}</b></div></div>`;
   const parts = `<div class="parts" id="stkParts">
       ${part('pStock', 'Not refined yet', S0.l ? `incl. ${S0.l} not synced` : '', S0.n, S0.g, 'as bought', 'Cost', S0.c, S0.v, S0.p)}
-      ${part('pRef', 'Refined, not sold', '', R.b ? `${R.b}<small class="src" id="pRefSrc">from ${R.n} item${R.n === 1 ? '' : 's'}</small>` : 0, R.g, R.b ? `as bought · ${grams(R.ref)} g refined${R.act ? (R.act === R.b ? ' (actual)' : ` (${R.act} actual)`) : ''}` : 'as bought', 'Cost', R.c, R.v, R.p)}
+      ${part('pRef', 'Refined, not sold', '', R.b ? `${R.b}<small class="src" id="pRefSrc">from ${R.n} item${R.n === 1 ? '' : 's'}</small>` : 0, R.ref, R.b ? `<span id="pRefGcap">refined ${R.act ? (R.act === R.b ? '(actual)' : `(${R.act} of ${R.b} actual)`) : '(est.)'} · ${grams(R.g)} g as bought</span>` : 'refined', 'Cost', R.c, R.v, R.p)}
     </div>`;
   return `<div class="stkwrap" id="stockMain">
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
@@ -2066,7 +2071,7 @@ function stockBoxesHTML() {
     <div class="stk" id="dToday"><h3><span>In stock – bought today</span></h3><div class="sumlist">
       ${rt ? '<div class="tcap" id="tCap"><span>Not refined yet</span></div>' : ''}<div><span>Items</span><b id="tCount">${T.n}</b></div><div><span>Grams</span><b id="tGrams">${grams(T.g)} g</b></div>
       <div><span>Cost</span><b id="tCost">${peso(T.c)}</b></div>
-      ${rt ? `<div id="tRefRow"><span>Refined, not sold</span><b id="tRef">${grams(rt)} g</b></div><div class="tsum" id="tTotRow"><span>Total grams</span><b id="tTotG">${grams(cl(T.g + rt))} g</b></div>` : ''}</div>${loc(T)}</div></div>`;
+      ${rt ? `<div id="tRefRow"><span>Refined, not sold<small class="tcapr">refined weight · ${grams(rtRaw)} g as bought</small></span><b id="tRef">${grams(rt)} g</b></div><div class="tsum" id="tTotRow"><span>Total grams</span><b id="tTotG">${grams(cl(T.g + rt))} g</b></div>` : ''}</div>${loc(T)}</div></div>`;
 }
 
 // ---------- v30: grams bought per day, one Sunday–Saturday week (Manila), under Total in stock ----------
