@@ -212,6 +212,17 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .bqmv{border:0;background:var(--goldbg);color:#3d2c00;border:1px solid var(--goldline);border-radius:10px;min-width:44px;min-height:44px;font-size:18px;font-weight:800;cursor:pointer;flex:none}
 .bkbox{margin-top:16px;padding:12px;border:2px solid var(--line);border-radius:12px;background:#fffdf6}
 .bkbox h3{margin:0 0 4px;font-size:16px}
+details.lastres{margin-top:16px;border-top:1px dashed var(--line);padding-top:8px}
+details.lastres summary{cursor:pointer;color:var(--muted,#777);font-size:14px;min-height:44px;display:flex;align-items:center;gap:6px;list-style:none}
+details.lastres summary::-webkit-details-marker{display:none}
+details.lastres .btn{margin-top:8px}
+.undobox{border:2px solid var(--red);border-radius:12px;padding:10px 12px;margin:8px 0;background:var(--redbg)}
+.undobox .grid2{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-variant-numeric:tabular-nums}
+.undobox .grid2 b{text-align:right;overflow-wrap:anywhere}
+#undoType{text-transform:uppercase;letter-spacing:.1em}
+.undonote{margin:8px 0;font-size:14px;line-height:1.4;color:var(--muted,#666)}
+details.lastres[open] summary .chev{transform:rotate(90deg)}
+details.lastres summary .chev{display:inline-block;transition:transform .15s}
 .bkbox .btn{margin-top:10px}
 .bkst{margin-top:8px;font-size:14px;font-weight:700;color:var(--muted);overflow-wrap:anywhere}
 .bkst.ok{color:var(--green)}.bkst.err{color:var(--red)}.bkst.warn{color:var(--brown)}.bkst.busy{color:var(--blue)}
@@ -454,7 +465,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -1871,6 +1882,7 @@ const beTyping = () => view === 'sales' && !!document.activeElement && !!beBox(d
 // that came back from the refiner, so it is never changed: the app warns before and reminds on the card after.
 const batchOf = id => (ST && ST.batches || []).find(x => x.id === id);
 const beChanged = id => !!(beAll()[id] || {}).chg;
+function beForget(id) { const all = beAll(); if (all[id]) { delete all[id]; save(BE_KEY, all); } }   // v40: batch undone
 function beMarkChanged(id) { const all = beAll(), e = all[id] || {}; e.chg = true; all[id] = e; save(BE_KEY, all); }
 const actualNote = act => `This batch has an actual refined weight typed (${grams(act)} g). Adding or taking out items does not change it, so update it if the refiner's weight changes.`;
 function batchActHTML(b) {
@@ -2011,8 +2023,12 @@ const FC_KEY = 'gold-tracker-batchcost';
 const feeSet = () => Number((S() || {}).refiningFee) || 0;
 const fcSig = b => `${Number(b.items) || 0}|${round2((Number(b.rawG) || 0) * 1000)}`;   // changes when items go in / out
 const fcCif = b => hasNum(b.costInclFee) ? round2(b.costInclFee) : null;
+// v40: an entry made for an earlier batch with the same ID (one that was undone) is never used: Api.gs v11 sends each
+// batch's time (b.at) and the entry keeps it.
+const fcStale = (k, b) => !!(k && k.at && b.at && k.at !== b.at);
+function fcForget(id) { const all = load(FC_KEY) || {}; if (all[id]) { delete all[id]; save(FC_KEY, all); } [...fcTried].forEach(x => { if (x.startsWith(id + '|')) fcTried.delete(x); }); }
 function batchCost(b, fc) {
-  const k = (fc || load(FC_KEY) || {})[b.id], cif = fcCif(b), ok = k && hasNum(k.cost) && hasNum(k.fee);
+  const k0 = (fc || load(FC_KEY) || {})[b.id], k = fcStale(k0, b) ? null : k0, cif = fcCif(b), ok = k && hasNum(k.cost) && hasNum(k.fee);
   if (ok && k.sig === fcSig(b)) return k.cost + k.fee;                                 // locked
   if (ok && cif) return cif - feeSet() + k.fee;                                         // items changed, not re-read yet: sheet Σ + its locked fee
   return cif || 0;                                                                     // first sight
@@ -2020,17 +2036,17 @@ function batchCost(b, fc) {
 let fcBusy = false; const fcTried = new Set();
 async function fcCheck() {   // after a Dashboard draw: read the items of open batches that are new or changed (one at a time)
   if (fcBusy || !ST || !(Number(ST.version) >= 10) || !connected() || isOffline()) return;
-  const fc = load(FC_KEY) || {}, key = b => b.id + '|' + fcSig(b) + '|' + fcCif(b);
-  const todo = (ST.batches || []).filter(b => { const k = fc[b.id]; return b.status === 'Refining' && !(k && k.sig === fcSig(b) && k.cif === fcCif(b)) && !fcTried.has(key(b)); });
+  const fc = load(FC_KEY) || {}, key = b => b.id + '|' + fcSig(b) + '|' + fcCif(b) + '|' + (b.at || '');
+  const todo = (ST.batches || []).filter(b => { const k = fcStale(fc[b.id], b) ? null : fc[b.id]; return b.status === 'Refining' && !(k && k.sig === fcSig(b) && k.cif === fcCif(b)) && !fcTried.has(key(b)); });
   if (!todo.length) return;
   fcBusy = true; let changed = false;
   try {
     for (const b of todo) {
       fcTried.add(key(b)); const before = batchCost(b);
       let j; try { j = await api('batchItems', { batchId: b.id }); } catch (e) { continue; }
-      const all = load(FC_KEY) || {}, k = all[b.id], cost = round2((j.items || []).reduce((t, x) => t + (Number(x.cost) || 0), 0)), cif = fcCif(b);
+      const all = load(FC_KEY) || {}, k = fcStale(all[b.id], b) ? null : all[b.id], cost = round2((j.items || []).reduce((t, x) => t + (Number(x.cost) || 0), 0)), cif = fcCif(b);
       const fee = k && hasNum(k.fee) ? Number(k.fee) : (cif != null && cif - cost > 0.005 ? round2(cif - cost) : feeSet());
-      all[b.id] = { sig: fcSig(b), cif, cost, fee }; save(FC_KEY, all);
+      all[b.id] = { sig: fcSig(b), cif, cost, fee, at: b.at || (k && k.at) || undefined }; save(FC_KEY, all);
       if (Math.abs(batchCost(b) - before) > 0.004) changed = true;
     }
   } finally { fcBusy = false; }
@@ -2261,6 +2277,42 @@ function bkInit() {
   bkStore.get().then(async h => { if (!h || BK.h) return; BK.h = h; try { BK.perm = await h.queryPermission({ mode: 'readwrite' }); } catch (e) { BK.perm = 'prompt'; } bkPaint(); }).catch(() => {});
 }
 
+// v40: undo the newest refining batch (Settings › Last resort; Api.gs v11 undoLastBatch)
+function openUndoBatch() {
+  if (!connected()) return toast('Connect to the sheet first');
+  if (!navigator.onLine) return alert(OFFLINE_MSG);
+  const B = (ST && ST.batches) || [], b = B[0];   // newest first
+  const box = (h, body) => modal(`<h2>${h}</h2>${body}<button class="btn light" onclick="closeModal()">Close</button>`);
+  if (!(Number(ST.version) >= 11)) return box('↩ Undo last refining batch', `<div class="note">Your sheet's Api.gs is older than v11, so it cannot undo a batch yet. Paste the new Api.gs in Apps Script and make a New version of the deployment, then try again. Nothing was changed.</div>`);
+  if (!b) return box('↩ Undo last refining batch', '<div class="note">There is no refining batch to undo.</div>');
+  if (b.status !== 'Refining' || !b.canAdd) return box('↩ Undo last refining batch', `<div class="note">The newest batch, <b>${esc(b.id)}</b>, is sold (or has sale details), so it cannot be undone. Nothing was changed.</div>`);
+  const newer = (ST.stock || []).length, n = Number(b.items) || 0;
+  const m = modal(`<h2>↩ Undo batch ${esc(b.id)}?</h2>
+    <div class="undobox"><div class="grid2"><span>Batch</span><b>${esc(b.id)}</b><span>Made</span><b>${fmtDate(b.date)}</b>
+      <span>Items</span><b>${n}</b><span>Grams as bought</span><b>${hasNum(b.rawG) ? grams(b.rawG) + ' g' : '–'}</b></div></div>
+    <div class="muted">All ${n} item${n === 1 ? '' : 's'} go back In stock with their own number, date, time, weight, purity, cost and Bought together group. The batch leaves the Refining tab and the Dashboard.</div>
+    ${newer ? `<div class="undonote">ℹ️ The ${newer} item${newer === 1 ? '' : 's'} now In stock (bought since) stay${newer === 1 ? 's' : ''} as ${newer === 1 ? 'it is' : 'they are'}; only ${newer === 1 ? 'its' : 'their'} Batch # move${newer === 1 ? 's' : ''} up to follow the items brought back.</div>` : ''}
+    ${beVals(b).actual != null || beVals(b).base != null ? '<div class="undonote">ℹ️ The estimate typed on this batch (base / actual refined weight) is removed with it.</div>' : ''}
+    <div class="bwarn">⚠️ This cannot be undone. To refine these items again, use Batch refine.</div>
+    <label for="undoType">Type <b>UNDO</b> to confirm</label><input id="undoType" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <button class="btn danger" id="undoGo" disabled>↩ Undo batch ${esc(b.id)}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const inp = $('#undoType'), go = $('#undoGo');
+  inp.addEventListener('input', () => { go.disabled = inp.value.trim().toUpperCase() !== 'UNDO'; });
+  go.onclick = async () => {
+    if (inp.value.trim().toUpperCase() !== 'UNDO') return;
+    let j;
+    try { go.disabled = true; go.textContent = 'Undoing…'; j = await api('undoLastBatch', { batchId: b.id, items: n }, true); }
+    catch (e) {
+      go.textContent = `↩ Undo batch ${b.id}`; go.disabled = false;
+      const msg = /Unknown action/.test(e.message) ? 'Your sheet\'s Api.gs is older than v11. Paste the new Api.gs and make a New version of the deployment. Nothing was changed.' : (e.net ? (navigator.onLine ? e.message : OFFLINE_MSG) : e.message);
+      if (document.body.contains(go)) { let w = $('#undoErr'); if (!w) { w = document.createElement('div'); w.id = 'undoErr'; w.className = 'note'; go.before(w); } w.textContent = msg; } else alert(msg);
+      if (e.net) render(); return;
+    }
+    fcForget(b.id); beForget(b.id);
+    closeModal(); render(); toast(safeMsg(j.message), 6000);
+  };
+}
+
 // Settings
 function openSettings() {
   modal(`<h2>⚙️ Settings</h2><div class="muted">Connect to the Gold Tracker sheet's web app. The setup text from Apps Script looks like <b>URL|token</b>; you can paste it whole into the URL box.</div>
@@ -2271,6 +2323,9 @@ function openSettings() {
     ${connected() ? `<div class="bkbox" id="bkBox">${backupHTML()}</div>` : ''}
     ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
     <button class="btn light" onclick="closeModal()">Close</button>
+    ${connected() ? `<details class="lastres" id="lastRes"><summary><span class="chev">▸</span> Last resort</summary>
+      <div class="muted">Only if a batch was made by mistake. Puts every item of the newest batch back In stock, as before batching.</div>
+      <button type="button" class="btn danger" id="undoBatchBtn" onclick="openUndoBatch()">↩ Undo last refining batch</button></details>` : ''}
     <div class="muted" style="margin-top:12px;text-align:center">Lucas Gold Tracker v${APP_VERSION}${lastSync ? ' · last synced ' + esc(whenTxt(lastSync)) : ''}</div>`);
   $('#csave').onclick = async () => {
     let u = $('#cu').value.trim(), t = $('#ct').value.trim();
