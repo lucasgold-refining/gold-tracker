@@ -141,6 +141,33 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .wkempty{padding:6px 0 2px;text-align:center}
 .wknote{margin-top:6px;font-size:13px}
 @media (max-width:360px){.wkv{font-size:10.5px}.wkbar{height:90px}}
+/* v41: profit by month (one bar per month, profit only). Width encodes the amount, so a hidden chart has no fill. */
+.stk.mp{background:#fff;border:2px solid var(--line);border-left:2px solid var(--line);padding:12px 12px 10px;margin:0 0 14px;min-width:0;max-width:100%}
+.stk.mp h3{align-items:center}
+.stk.mp .wkhead{align-items:center;margin-bottom:10px}
+.stk.mp .wknav button{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.mplist{min-width:0}
+.mprow{min-width:0;margin:0 0 8px}
+.mprow:last-child{margin-bottom:0}
+.mptop{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.mpl{flex:none;font-size:14px;font-weight:800;color:var(--brown);white-space:nowrap}
+.mprow.cur .mpl{background:var(--gold);color:var(--ink);border-radius:6px;padding:0 5px}
+.mpv{flex:1 1 auto;min-width:0;text-align:right;font-size:18px;font-weight:900;line-height:1.2}
+.mpv .pv{white-space:nowrap}
+.mptrack{position:relative;display:flex;align-items:stretch;height:14px;margin-top:3px;border-radius:7px;background:#f4efe1;overflow:hidden}
+.mpneg,.mppos{height:100%;min-width:0;display:flex;align-items:stretch}
+.mpneg{justify-content:flex-end}
+.mppos{justify-content:flex-start}
+.mplist:not(.mixed) .mpneg{display:none}
+.mplist:not(.mixed):not(.neg) .mppos{flex:1 1 auto}
+.mplist.neg .mppos{display:none}
+.mplist.neg .mpneg{display:flex;flex:1 1 auto;justify-content:flex-start}
+.mplist.mixed .mpneg,.mplist.mixed .mppos{flex:1 1 50%}
+.mplist.mixed .mptrack::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:#c4b89a;pointer-events:none}
+.mpneg i,.mppos i{display:block;height:100%;width:0;border-radius:7px}
+.mpneg i{background:var(--red)}
+.mppos i{background:var(--green)}
+.mpempty{padding:8px 0 2px}
 .tiles .tile.wide{grid-column:1/-1}
 .stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
 .stk.main h3{font-size:20px;color:var(--brown)}
@@ -465,7 +492,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -544,6 +571,7 @@ function applyEye() {
   const b = $('#tabEye'); if (b) { const st = tabState(view), t = tabCtl(st);
     b.dataset.state = st; b.setAttribute('aria-pressed', String(st === 'hidden')); b.setAttribute('aria-label', t.aria); b.title = t.aria; b.innerHTML = t.html; }
   if (view === 'dash') fitNums();
+  applyMonthChart();
 }
 // v20 / v38: shrink a Dashboard number only when it does not fit its box (never cut, wrapped or ellipsised, min 11 px).
 // v38: runs at every width (PC boxes can be narrow too) and measures the number's real width (inline-block), so it
@@ -2164,7 +2192,139 @@ function weekNav(d) {
   const el = $('#dWeek'); if (el) el.outerHTML = weekHTML();
 }
 
+// ---------- v41: profit by month (replaces the Dashboard "Current base / gram" tile) ----------
+// Realized profit, same definition as the sheet's Dashboard column G, using what getState already sends (Api.gs v11):
+//   • Each Sales-tab row (ST.sales) contributes its realized profit: actual received − cost. The refining fee is inside
+//     that cost and is never shown here. The date is the sale date (Sales!A, calendar YYYY-MM-DD), not the purchase
+//     date and not the refining date. A sale dated 31 Dec and one dated 1 Jan stay in different months.
+//   • A recorded batch is already one of those sales. Its profit is not added again from ST.batches. A batch that is
+//     sold but not yet on the Sales tab is not part of Dashboard realized profit, so it is not part of this chart.
+//   • Item-level realized profit (Purchases / Archive / Archive Totals, by sold date) is not in getState. It is not guessed.
+//   • ST.month.realizedProfit is the Dashboard figure for the named month (2026 compilation summary + sales + item
+//     profit). It replaces that month's sales sum, so the bar matches the month card. Compilation amounts for other
+//     months are not in the payload.
+//   • If the sheet sends the Dashboard column as ST.realizedMonths, or month.months / dashboard.months
+//     ([{month:'2026-01', profit:n}] or {'2026-01': n}), that series is the whole chart and sales are not added on top.
+// One bar per month, profit only (no revenue or cost bars). Hidden profit (default) draws every month the same:
+// no fill, no amount, no axis figure, no tooltip.
+let dashMo = 0;   // 0 = latest 12-month page, 1 = the page before that, ...
+const MON_FULL = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+function monthKeyOK(y, mo, day) {
+  y = +y; mo = +mo;
+  if (!Number.isInteger(y) || y < 1990 || y > 2200 || mo < 1 || mo > 12) return '';
+  if (day != null && day !== '') {
+    day = +day;
+    const dt = new Date(Date.UTC(y, mo - 1, day));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== day) return '';
+  }
+  return String(y) + '-' + String(mo).padStart(2, '0');
+}
+function monthNameKey(name) {
+  const s = String(name || '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) return monthKeyOK(m[1], m[2], m[3]);
+  m = s.match(/^(\d{4})-(\d{2})$/); if (m) return monthKeyOK(m[1], m[2]);
+  m = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (m) { const t = m[1].toLowerCase(), i = MON_FULL.findIndex(x => x === t || x.slice(0, 3) === t.slice(0, 3)); if (i >= 0) return monthKeyOK(m[2], i + 1); }
+  m = s.match(/^(\d{4})\s+([A-Za-z]+)$/);
+  if (m) { const t = m[2].toLowerCase(), i = MON_FULL.findIndex(x => x === t || x.slice(0, 3) === t.slice(0, 3)); if (i >= 0) return monthKeyOK(m[1], i + 1); }
+  return '';
+}
+const saleMonthKey = date => { const m = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? monthKeyOK(m[1], m[2], m[3]) : ''; };
+function moneyOf(v) {
+  if (v == null || v === '') return null;
+  const n = typeof v === 'number' ? v : parseNum(v);
+  return n == null || !isFinite(n) ? null : n;
+}
+function explicitMonthMap() {
+  if (!ST) return null;
+  const src = ST.realizedMonths || (ST.month && ST.month.months) || (ST.dashboard && ST.dashboard.months);
+  if (!src) return null;
+  const map = {};
+  const put = (k, v) => { const key = monthNameKey(k), n = moneyOf(v); if (key && n != null) map[key] = round2(n); };
+  if (Array.isArray(src)) src.forEach(row => { if (row && typeof row === 'object') put(row.month || row.ym || row.date || row.name, row.profit != null ? row.profit : row.realizedProfit); });
+  else if (typeof src === 'object') Object.keys(src).forEach(k => put(k, src[k]));
+  return Object.keys(map).length ? map : null;
+}
+function profitMonthMap() {
+  const explicit = explicitMonthMap(); if (explicit) return explicit;
+  const map = {};
+  (ST && ST.sales || []).forEach(s => { if (!s) return; const n = moneyOf(s.profit); if (n == null) return; const k = saleMonthKey(s.date); if (k) map[k] = (map[k] || 0) + n; });
+  Object.keys(map).forEach(k => { map[k] = round2(map[k]); });
+  const m = ST && ST.month;
+  if (m && hasNum(m.realizedProfit)) map[monthNameKey(m.name) || todayISO().slice(0, 7)] = round2(m.realizedProfit);
+  return map;
+}
+const monthIndex = key => +key.slice(0, 4) * 12 + (+key.slice(5, 7) - 1);
+const keyFromIndex = i => { const y = Math.floor(i / 12), m = i % 12; return y + '-' + String(m + 1).padStart(2, '0'); };
+const monthLabel = key => MON[+key.slice(5, 7) - 1] + ' ' + key.slice(0, 4);
+function profitSpan(map) {
+  const cur = monthIndex(todayISO().slice(0, 7));
+  let start = cur, end = cur;
+  Object.keys(map).forEach(k => { const i = monthIndex(k); if (i < start) start = i; if (i > end) end = i; });
+  return { start, end };
+}
+function profitMonthWindow(map) {
+  const span = profitSpan(map), total = span.end - span.start + 1, pages = Math.max(1, Math.ceil(total / 12));
+  const page = Math.max(0, Math.min(pages - 1, dashMo));
+  dashMo = page;
+  const end = span.end - page * 12, start = Math.max(span.start, end - 11);
+  return { start, end, moreBefore: start > span.start, moreAfter: end < span.end };
+}
+function monthChartHTML() {
+  const map = profitMonthMap(), keys = Object.keys(map);
+  const on = gShown('dash:month');
+  const head = `<h3><span>Profit by month</span>${eyeBtn('dash:month')}</h3>`;
+  if (!keys.length) return `<div class="stk mp" id="dMonths">${head}<div class="empty mpempty" id="moEmpty">No realized profit yet.</div></div>`;
+  const W = profitMonthWindow(map), cur = todayISO().slice(0, 7);
+  let hasPos = false, hasNeg = false;
+  const rows = [];
+  for (let i = W.start; i <= W.end; i++) {
+    const k = keyFromIndex(i), v = map[k] != null ? map[k] : 0;
+    if (v > 0.004) hasPos = true; if (v < -0.004) hasNeg = true;
+    rows.push({ k, v });
+  }
+  const mixed = on && hasPos && hasNeg, neg = on && hasNeg && !hasPos;
+  const range = W.start === W.end ? monthLabel(keyFromIndex(W.start)) : monthLabel(keyFromIndex(W.start)) + ' – ' + monthLabel(keyFromIndex(W.end));
+  const bars = rows.map(r => {
+    const label = monthLabel(r.k);
+    const aria = on ? `${label}, ${peso(r.v)}` : `${label}, profit hidden`;
+    return `<div class="mprow${r.k === cur ? ' cur' : ''}" role="listitem" data-k="${r.k}" data-mo="${esc(label)}" data-p="${r.v}" aria-label="${esc(aria)}">
+      <div class="mptop" aria-hidden="true"><span class="mpl">${esc(label)}</span><b class="fit mpv">${prof(r.v, 'dash:month')}</b></div>
+      <div class="mptrack" aria-hidden="true"><span class="mpneg"><i></i></span><span class="mppos"><i></i></span></div></div>`;
+  }).join('');
+  return `<div class="stk mp" id="dMonths">${head}
+    <div class="wkhead"><span id="moRange">${esc(range)}</span><span class="wknav"><button type="button" id="moPrev" aria-label="Earlier months" onclick="monthNav(1)"${W.moreBefore ? '' : ' disabled'}>‹</button><button type="button" id="moNext" aria-label="Later months" onclick="monthNav(-1)"${W.moreAfter ? '' : ' disabled'}>›</button></span></div>
+    <div class="mplist${mixed ? ' mixed' : ''}${neg ? ' neg' : ''}" id="moList" role="list" aria-label="${on ? 'Monthly realized profit' : 'Monthly realized profit, hidden'}">${bars}</div></div>`;
+}
+function applyMonthChart() {
+  const box = $('#dMonths'); if (!box) return;
+  const on = gShown('dash:month');
+  const rows = [...box.querySelectorAll('.mprow')];
+  let max = 0, hasPos = false, hasNeg = false;
+  rows.forEach(row => { const v = Number(row.dataset.p); if (!isFinite(v)) return; if (Math.abs(v) > max) max = Math.abs(v); if (v > 0.004) hasPos = true; if (v < -0.004) hasNeg = true; });
+  const list = box.querySelector('.mplist');
+  if (list) { list.classList.toggle('mixed', on && hasPos && hasNeg); list.classList.toggle('neg', on && hasNeg && !hasPos); list.setAttribute('aria-label', on ? 'Monthly realized profit' : 'Monthly realized profit, hidden'); }
+  rows.forEach(row => {
+    const v = Number(row.dataset.p), name = row.dataset.mo || '';
+    const neg = row.querySelector('.mpneg i'), pos = row.querySelector('.mppos i');
+    // A non-zero month keeps a short bar, so a small profit is not drawn the same as zero. The figure is the exact amount.
+    const pct = on && isFinite(v) && max > 0 && round2(v) !== 0 ? Math.max(4, Math.min(100, Math.abs(v) / max * 100)) + '%' : '0%';
+    if (neg) neg.style.width = on && v < 0 ? pct : '0%';
+    if (pos) pos.style.width = on && v > 0 ? pct : '0%';
+    row.setAttribute('aria-label', on && isFinite(v) ? name + ', ' + peso(v) : name + ', profit hidden');
+  });
+}
+function monthNav(d) {
+  const w = profitMonthWindow(profitMonthMap());
+  if (d > 0 && !w.moreBefore) return;
+  if (d < 0 && !w.moreAfter) return;
+  dashMo += d;
+  const el = $('#dMonths'); if (el) el.outerHTML = monthChartHTML();
+  applyEye();
+}
+
 // Dashboard (v10): stock first; this month's profit and the all-time totals folded into one dropdown.
+// v41: "Current base / gram" is gone from this screen. Profit by month sits in its place. The header base pill is unchanged.
 let dashOpen = false;
 function dashHTML() {
   const d = ST.dashboard || {}, m = ST.month;
@@ -2174,10 +2334,10 @@ function dashHTML() {
     : `<div class="month" id="monthCard"><div class="lbl">This month's profit</div><div class="sec" style="margin-top:8px">Paste the new Api.gs in Apps Script and deploy a new version to see this.</div></div>`;
   return stockBoxesHTML() + `<details class="all" id="allTime"${dashOpen ? ' open' : ''} ontoggle="dashOpen=this.open; fitNums()"><summary>Profit &amp; totals</summary><div class="inner">
     ${month}
+    ${monthChartHTML()}
     <div class="eyerow"><span class="muted">All-time totals</span>${eyeBtn('dash:all')}</div>
     <div class="tiles">
     <div class="tile green wide"><div class="lbl">Total realized profit</div><div class="val fit" id="dReal">${prof(d.totalRealized, 'dash:all')}</div></div>
-    <div class="tile ink"><div class="lbl">Current base / gram</div><div class="val fit" id="dBase"><span class="fv">${peso(ST.base)}</span></div><div class="muted">${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div></div>
     <div class="tile ink"><div class="lbl">Cash used</div><div class="val fit" id="dCash"><span class="fv">${peso(d.cashUsed)}</span></div></div>
   </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(whenTxt(lastSync))}</div>`;
 }
