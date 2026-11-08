@@ -1,4 +1,4 @@
-// v42: monthly chart only when Api.gs v12 sends realizedMonths. Example figures, not real ones.
+// v44: monthly chart only when Api.gs v12 sends realizedMonths. Example figures, not real ones.
 // Runs against the real page in Chromium.
 // Mobile: 412x915 CSS px, DPR 3.5, isMobile, hasTouch, text 100/115/130%.
 // Text scale multiplies the stylesheet's px font sizes (layout px stay), which is how
@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const OUT = '/opt/cursor/artifacts/gold-v43';
+const OUT = '/opt/cursor/artifacts/gold-v44';
 const PAGE_URL = process.env.GOLD_URL || 'http://127.0.0.1:8765/index.html#dash';
 const fails = [];
 const notes = [];
@@ -185,6 +185,7 @@ async function textScale(page, factor) {
     css = css.replace(/font:\s*([0-9.]+)px/g, (m, n) => m.replace(n, String(Math.round(n * factor * 10) / 10)));
     style.textContent = css;
     if (typeof fitNums === 'function') fitNums();
+    if (typeof fitMonthLabs === 'function') fitMonthLabs();
   }, factor);
 }
 
@@ -229,7 +230,17 @@ async function layoutReport(page) {
     const text = (document.querySelector('#dMonths') || {}).innerText || '';
     const labels = [...document.querySelectorAll('#dMonths .mpcol, #dMonths .mpplot, #moEmpty, #moNeed')].map(el => el.getAttribute('aria-label') || '');
     const titles = [...document.querySelectorAll('#dMonths [title]')].map(el => el.getAttribute('title'));
-    return { overflow, clipped, taps, eyeAlign, bars, text, labels, titles, fee: /fee/i.test((document.querySelector('#app') || {}).innerText || ''), baseTile: !!document.querySelector('#dBase'), week: !!document.querySelector('#dWeek'), headerBase: (document.querySelector('#basePill') || {}).innerText || '' };
+    const ticks = [...document.querySelectorAll('#yAxis .yt')].map(el => el.textContent || '');
+    const losses = [...document.querySelectorAll('#dMonths .mpcol.loss')].map(el => el.dataset.k);
+    const tipEl = document.querySelector('#moTip');
+    const tip = tipEl && !tipEl.hidden ? tipEl.textContent : '';
+    const plot = document.querySelector('.mpplot'), zero = document.querySelector('.mpzero');
+    let zeroGap = null;
+    if (plot && zero && getComputedStyle(zero).display !== 'none') {
+      const p = plot.getBoundingClientRect(), z = zero.getBoundingClientRect();
+      zeroGap = Math.abs(z.bottom - p.bottom);
+    }
+    return { overflow, clipped, taps, eyeAlign, bars, text, labels, titles, ticks, losses, tip, zeroGap, fee: /fee/i.test((document.querySelector('#app') || {}).innerText || ''), baseTile: !!document.querySelector('#dBase'), week: !!document.querySelector('#dWeek'), headerBase: (document.querySelector('#basePill') || {}).innerText || '' };
   });
 }
 
@@ -255,6 +266,9 @@ function assertHidden(rep, secrets, tag) {
   const shown = rep.bars.filter(b => b.h > 0.5);
   check(!shown.length, tag + ' bar width leaked ' + JSON.stringify(shown));
   check(rep.bars.every(b => !b.outside), tag + ' bar outside track');
+  check(!(rep.losses || []).length, tag + ' loss marks leaked while hidden');
+  check(!(rep.ticks || []).length, tag + ' axis amounts leaked while hidden ' + (rep.ticks || []).join('|'));
+  check(!rep.tip, tag + ' detail leaked while hidden ' + rep.tip);
 }
 
 async function revealMonth(page) {
@@ -275,34 +289,38 @@ async function scaleGeometry(browser) {
       const zero = document.querySelector('.mpzero').getBoundingClientRect();
       const ticks = [...document.querySelectorAll('#yAxis .yt')].map(el => { const r = el.getBoundingClientRect(); return { v: Number(el.dataset.tick), top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2 }; });
       const bars = [...document.querySelectorAll('.mpcol')].map(col => {
-        const up = col.querySelector('.bu').getBoundingClientRect(), dn = col.querySelector('.bd').getBoundingClientRect();
-        return { k: col.dataset.k, v: Number(col.dataset.p), upTop: up.top, upH: up.height, dnBot: dn.bottom, dnH: dn.height };
+        const up = col.querySelector('.bu').getBoundingClientRect();
+        return { k: col.dataset.k, v: Number(col.dataset.p), loss: col.classList.contains('loss'), aria: col.getAttribute('aria-label') || '', upTop: up.top, upH: up.height };
       });
-      return { mode: document.querySelector('.mpplot').className, plot: { top: plot.top, bottom: plot.bottom, h: plot.height }, zero: (zero.top + zero.bottom) / 2, ticks, bars };
+      return { mode: document.querySelector('.mpplot').className, plot: { top: plot.top, bottom: plot.bottom, h: plot.height }, zeroBottom: zero.bottom, ticks, bars, down: document.querySelectorAll('.bd, .mpdn').length };
     });
     await context.close();
     return g;
   };
   const near = (a, b, tol, msg) => check(Math.abs(a - b) <= tol, msg + ' (' + a.toFixed(1) + ' vs ' + b.toFixed(1) + ')');
   const mix = await measure([{ month: '2026-01', profit: 100 }, { month: '2026-02', profit: -100 }, { month: '2026-03', profit: 40 }, { month: '2026-04', profit: -25 }]);
-  check(mix.mode.includes('mixed'), 'equal extremes use a centered scale');
-  const top = mix.ticks.find(t => t.v === 100), zTick = mix.ticks.find(t => t.v === 0), bot = mix.ticks.find(t => t.v === -100);
-  const up = mix.bars.find(b => b.v === 100), down = mix.bars.find(b => b.v === -100);
+  check(mix.mode.includes('pos') && !mix.mode.includes('mixed') && !mix.mode.includes('neg'), 'gains and losses share the positive scale');
+  check(mix.down === 0 && mix.ticks.every(t => t.v >= -0.001), 'negative scale was drawn ' + JSON.stringify(mix.ticks));
+  const top = mix.ticks.find(t => t.v === 100), zTick = mix.ticks[mix.ticks.length - 1];
+  const up = mix.bars.find(b => b.v === 100), loss = mix.bars.find(b => b.v === -100);
   near(up.upTop, top.top, 8, 'profit bar of the top tick ends at that tick');
-  near(down.dnBot, bot.bottom, 8, 'loss bar of the bottom tick ends at that tick');
-  near(zTick.bottom, mix.zero, 8, 'zero tick sits on the zero line');
-  const smallUp = mix.bars.find(b => b.v === 40), smallDn = mix.bars.find(b => b.v === -25);
+  near(zTick.bottom, mix.zeroBottom, 8, 'zero tick sits on the bottom baseline');
+  near(mix.zeroBottom, mix.plot.bottom, 3, 'zero line is the bottom of the plot');
+  const smallUp = mix.bars.find(b => b.v === 40);
   check(Math.abs(smallUp.upH / up.upH - 0.4) < 0.04, '40 vs 100 bar heights ' + smallUp.upH + '/' + up.upH);
-  check(Math.abs(smallDn.dnH / down.dnH - 0.25) < 0.04, '−25 vs −100 bar heights ' + smallDn.dnH + '/' + down.dnH);
+  check(loss.loss && loss.upH < 0.5 && /loss/.test(loss.aria) && /100\.00/.test(loss.aria), 'a loss must stay off the axis and keep its amount ' + JSON.stringify(loss));
+  check(mix.bars.find(b => b.v === -25).upH < 0.5, 'smaller loss was drawn as a bar');
   const pos = await measure([{ month: '2026-06', profit: 80 }, { month: '2026-07', profit: 40 }]);
-  check(pos.mode.includes('pos') && !pos.mode.includes('mixed'), 'only profits use the full height from zero at the bottom');
-  near(pos.zero, pos.plot.bottom, 3, 'only-profit zero line is the bottom of the plot');
+  check(pos.mode.includes('pos'), 'only profits use the full height from zero at the bottom');
+  near(pos.zeroBottom, pos.plot.bottom, 3, 'only-profit zero line is the bottom of the plot');
   const big = pos.bars.find(b => b.v === 80);
   near(big.upH, pos.plot.h, 4, 'largest profit uses the whole plot');
+  check(Math.abs(pos.bars.find(b => b.v === 40).upH / big.upH - 0.5) < 0.04, 'half profit is not half the bar');
   const neg = await measure([{ month: '2026-08', profit: -80 }, { month: '2026-09', profit: -20 }]);
-  check(neg.mode.includes('neg'), 'only losses grow down from zero at the top');
-  near(neg.zero, neg.plot.top, 3, 'only-loss zero line is the top of the plot');
-  near(neg.bars.find(b => b.v === -80).dnH, neg.plot.h, 4, 'largest loss uses the whole plot');
+  check(neg.mode.includes('flat') && neg.down === 0, 'only losses must not open a negative region');
+  near(neg.zeroBottom, neg.plot.bottom, 3, 'only-loss zero line stays at the bottom');
+  check(neg.ticks.every(t => t.v >= -0.001) && neg.ticks.some(t => t.v === 0), 'only-loss axis ' + JSON.stringify(neg.ticks));
+  check(neg.bars.every(b => b.upH < 0.5) && neg.bars.filter(b => b.v < 0).every(b => b.loss), 'only-loss months were drawn as bars ' + JSON.stringify(neg.bars.filter(b => b.v)));
 }
 async function run() {
   await mkdir(OUT, { recursive: true });
@@ -339,6 +357,7 @@ async function run() {
         const keysOf = yr => Array.from({ length: 12 }, (_, i) => yr + '-' + String(i + 1).padStart(2, '0'));
         out.y2026 = keysOf(2026);
         out.y2024 = keysOf(2024);
+        out.axis = { k: axisAmt(200000), m: axisAmt(1200000), z: axisAmt(0), s: axisAmt(0.4), odd: axisAmt(1040), big: axisAmt(12345678.9) };
         return out;
       });
       check(!errs.length, 'page errors ' + errs.join('; '));
@@ -349,6 +368,7 @@ async function run() {
       check(math.hadSeries, 'example series missing from the chart html');
       check(math.years.join() === '2024,2025,2026', 'years ' + math.years);
       check(math.year === 2026, 'default year is the current year');
+      check(math.axis.k === '₱200k' && math.axis.m === '₱1.2M' && math.axis.z === '₱0' && math.axis.s === '₱0.4' && math.axis.odd === '₱1.04k' && /^₱12\.3/.test(math.axis.big), 'compact axis ' + JSON.stringify(math.axis));
       check(math.y2026[0] === '2026-01' && math.y2026[11] === '2026-12' && math.y2026.length === 12, 'one calendar year is Jan–Dec');
       check(math.y2024[0] === '2024-01' && !math.y2024.some(k => k.slice(0, 4) !== '2024'), 'a year view does not cross into another year');
       // rules that must stay: fee included in cost, fee word absent, refined batch counts as one item
@@ -435,20 +455,23 @@ async function run() {
     check(!/₱\s*[0-9]/.test(fullMasked.rep.text), 'masked chart text has a peso amount: ' + fullMasked.rep.text);
     const fullShown = await scenario('mobile-100-full-revealed', fullState(), SHOWN, {});
     check(fullShown.rep.labels.some(l => l.includes('5,000.50')), 'January amount missing from the chart');
-    check(fullShown.rep.text.includes('800,000.00'), 'revealed chart missing June amount');
-    check(fullShown.rep.text.includes('800,000.00') && fullShown.rep.labels.some(l => l.includes('42,000.00')), 'loss stays on August, while the axis uses the shared scale');
-    check(fullShown.rep.text.includes('−₱800,000.00') || fullShown.rep.text.includes('-₱800,000.00'), 'mixed scale bottom tick must be −800,000, not the smaller loss');
+    check(fullShown.rep.ticks.includes('₱800k') && fullShown.rep.ticks.includes('₱0'), 'revealed axis should be the short scale ' + fullShown.rep.ticks.join('|'));
+    check(!fullShown.rep.ticks.some(t => /[−-]₱/.test(t)), 'negative axis label ' + fullShown.rep.ticks.join('|'));
+    check(fullShown.rep.zeroGap != null && fullShown.rep.zeroGap < 3, 'zero line is not the bottom ' + fullShown.rep.zeroGap);
+    check(fullShown.rep.labels.some(l => l.includes('loss') && l.includes('42,000.00')), 'August loss amount missing from the month control');
+    check(!fullShown.rep.text.includes('800,000.00') && !fullShown.rep.text.includes('42,000.00'), 'exact amounts should wait for hover or tap');
     check(!fullShown.rep.text.includes('777,777.77'), 'sales-only decoy was drawn as monthly profit');
     check(/\b2026\b/.test(fullShown.rep.text) && !/Jan 2026|Feb 2026|Nov 2026/.test(fullShown.rep.text), 'year once, not on each month');
     const pos = fullShown.rep.bars.filter(b => b.side === 'up' && b.h > 0.5);
     const neg = fullShown.rep.bars.filter(b => b.side === 'dn' && b.h > 0.5);
-    check(pos.length >= 2 && neg.length >= 1, 'expected upward and downward bars, got ' + JSON.stringify(fullShown.rep.bars.filter(b => b.h > 0.5)));
+    check(pos.length >= 2 && !neg.length, 'positive bars only, got ' + JSON.stringify(fullShown.rep.bars.filter(b => b.h > 0.5)));
+    check(fullShown.rep.losses.includes('2026-03') && fullShown.rep.losses.includes('2026-08'), 'loss dots ' + fullShown.rep.losses.join(','));
     const june = fullShown.rep.bars.find(b => b.k === '2026-06' && b.side === 'up');
     const jan = fullShown.rep.bars.find(b => b.k === '2026-01' && b.side === 'up');
     const feb = fullShown.rep.bars.find(b => b.k === '2026-02' && b.side === 'up');
+    const augBar = fullShown.rep.bars.find(b => b.k === '2026-08');
     check(june && jan && june.h > jan.h * 8, 'bar height June vs January ' + JSON.stringify({ june, jan }));
-    const aug = fullShown.rep.bars.find(b => b.k === '2026-08' && b.side === 'dn');
-    check(june && aug && Math.abs(aug.h / june.h - 42000 / 800000) < 0.03, 'unequal loss/profit heights must share one scale ' + JSON.stringify({ june, aug }));
+    check(augBar && augBar.h < 0.5, 'August loss was drawn as a bar ' + JSON.stringify(augBar));
     check(feb && feb.h < 0.5, 'February zero should have no bar');
     check(fullShown.rep.bars.every(b => !b.outside), 'a bar draws outside its track');
 
@@ -458,8 +481,10 @@ async function run() {
 
     await scenario('mobile-100-long-masked', longState(), null, { secrets: secretsLong });
     const longShown = await scenario('mobile-100-long-revealed', longState(), SHOWN, {});
-    check(longShown.rep.text.includes('12,345,678.90'), 'long profit not shown');
-    check(longShown.rep.bars.some(b => b.k === '2026-10' && b.side === 'dn' && b.h > 0.5), 'October negative bar missing');
+    check(longShown.rep.labels.some(l => l.includes('12,345,678.90') && l.includes('loss')), 'long loss not kept on October');
+    check(longShown.rep.ticks.some(t => /^₱\d/.test(t) && !/[−-]₱/.test(t)), 'long axis ' + longShown.rep.ticks.join('|'));
+    check(!longShown.rep.bars.some(b => b.k === '2026-10' && b.h > 0.5), 'October loss was drawn as a bar');
+    check(longShown.rep.losses.includes('2026-10'), 'October loss mark missing');
     check(longShown.rep.bars.some(b => b.k === '2026-11' && b.side === 'up' && b.h > 0.5), 'November positive bar missing');
     await scenario('mobile-115-long-revealed', longState(), SHOWN, { scale: 1.15 });
     await scenario('mobile-130-long-revealed', longState(), SHOWN, { scale: 1.3 });
@@ -482,7 +507,7 @@ async function run() {
         bars: [...document.querySelectorAll('#dMonths .bu, #dMonths .bd')].some(el => el.getBoundingClientRect().height > 1)
       }));
       check(mid.month && !mid.all && !mid.stock, 'month eye changed other groups ' + JSON.stringify(mid));
-      check(/Monthly realized profit$/.test(mid.chart), 'chart aria after reveal ' + mid.chart);
+      check(/Monthly realized profit, 2026$/.test(mid.chart), 'chart aria after reveal ' + mid.chart);
       check(mid.total.includes('••••'), 'all-time profit revealed by the month eye: ' + mid.total);
       check(mid.bars, 'revealed chart has no bar width');
       await page.locator('#tabEye').click(); // master was hidden; tap shows ALL
@@ -511,6 +536,74 @@ async function run() {
       await shot(page, 'mobile-100-individual-all-shown');
       await context.close();
     }
+
+    // Hover, tap, and keyboard show the exact month. Hidden profit overrides all three.
+    {
+      const phone = await boot(browser, fullState(), SHOWN, {});
+      await openProfit(phone.page);
+      const y0 = await phone.page.evaluate(() => document.querySelector('#moYear').offsetTop);
+      const h0 = await phone.page.evaluate(() => document.querySelector('#dMonths').offsetHeight);
+      await phone.page.locator('#dMonths .mpcol[data-k="2026-08"]').click();
+      const tapped = await phone.page.evaluate(() => ({ tip: document.querySelector('#moTip').textContent, y: document.querySelector('#moYear').offsetTop, h: document.querySelector('#dMonths').offsetHeight }));
+      check(/Aug/.test(tapped.tip) && /loss/i.test(tapped.tip) && /42,000\.00/.test(tapped.tip), 'phone tap detail ' + tapped.tip);
+      check(tapped.y === y0 && tapped.h === h0, 'tap moved the chart');
+      await shotEl(phone.page, '#dMonths', 'mobile-100-full-tap-august');
+      await phone.page.locator('#dMonths .mpcol[data-k="2026-08"]').click();
+      check(await phone.page.locator('#moTip').isHidden(), 'second tap did not dismiss the detail');
+      await phone.page.locator('#moPrev').focus();
+      await phone.page.keyboard.press('Tab');
+      const keyed = await phone.page.evaluate(() => ({ k: document.activeElement.dataset.k, tip: document.querySelector('#moTip').textContent }));
+      check(keyed.k === '2026-01' && /5,000\.50/.test(keyed.tip), 'keyboard detail ' + JSON.stringify(keyed));
+      await phone.page.keyboard.press('ArrowRight');
+      const next = await phone.page.evaluate(() => ({ k: document.activeElement.dataset.k, tip: document.querySelector('#moTip').textContent }));
+      check(next.k === '2026-02' && /₱0\.00/.test(next.tip), 'arrow key detail ' + JSON.stringify(next));
+      await phone.page.keyboard.press('Escape');
+      check(await phone.page.locator('#moTip').isHidden(), 'escape did not dismiss the detail');
+      await phone.page.locator('#dStock .eye').click();
+      const stock = await phone.page.evaluate(() => ({ stock: gShown('dash:stock'), month: gShown('dash:month'), bars: [...document.querySelectorAll('#dMonths .bu')].some(el => el.getBoundingClientRect().height > 1), losses: document.querySelectorAll('#dMonths .mpcol.loss').length }));
+      check(!stock.stock && stock.month && stock.bars && stock.losses === 2, 'stock eye changed the month chart ' + JSON.stringify(stock));
+      await phone.page.locator('#dMonths .eye').click();
+      await phone.page.locator('#dMonths .mpcol[data-k="2026-06"]').hover();
+      await phone.page.locator('#dMonths .mpcol[data-k="2026-08"]').click();
+      const covered = await phone.page.evaluate(() => ({
+        hidden: document.querySelector('#moTip').hidden,
+        tip: document.querySelector('#moTip').textContent,
+        loss: document.querySelectorAll('#dMonths .mpcol.loss').length,
+        bars: [...document.querySelectorAll('#dMonths .bu')].every(el => el.getBoundingClientRect().height < 0.5)
+      }));
+      check(covered.hidden && !covered.tip && !covered.loss && covered.bars, 'hidden profit still answered hover or tap ' + JSON.stringify(covered));
+      await phone.page.keyboard.press('Tab');
+      const blind = await phone.page.evaluate(() => document.querySelector('#moTip').textContent);
+      check(!blind, 'keyboard revealed a hidden month ' + blind);
+      await phone.context.close();
+
+      const desk = await boot(browser, fullState(), SHOWN, { desktop: true });
+      await openProfit(desk.page);
+      await desk.page.locator('#dMonths .mpcol[data-k="2026-06"]').hover();
+      const hovered = await desk.page.locator('#moTip').innerText();
+      check(/Jun/.test(hovered) && /800,000\.00/.test(hovered), 'hover detail ' + hovered);
+      await shotEl(desk.page, '#dMonths', 'desktop-100-full-hover-june');
+      await desk.page.mouse.move(2, 2);
+      check(await desk.page.locator('#moTip').isHidden(), 'leaving the bar left the detail up');
+      await desk.page.locator('#dMonths .mpcol[data-k="2026-08"]').hover();
+      const lossHover = await desk.page.locator('#moTip').innerText();
+      check(/loss/i.test(lossHover) && /42,000\.00/.test(lossHover), 'hover loss detail ' + lossHover);
+      await desk.context.close();
+    }
+
+    const allNeg = state({
+      version: 12,
+      realizedMonths: [{ month: '2026-03', profit: -2500.25 }, { month: '2026-08', profit: -42000 }, { month: '2026-10', profit: -80 }],
+      stock: [], sales: [], daily: {}, dailySold: {},
+      month: { name: 'November', realizedProfit: 0, purchasesCost: 0 },
+      dashboard: { totalRealized: 0, cashUsed: 0 }
+    });
+    const negShown = await scenario('mobile-100-all-negative', allNeg, SHOWN, {});
+    check(negShown.rep.losses.length === 3 && !negShown.rep.bars.some(b => b.h > 0.5), 'all-negative chart ' + JSON.stringify({ losses: negShown.rep.losses, bars: negShown.rep.bars.filter(b => b.h > 0.5) }));
+    check(negShown.rep.ticks.every(t => !/[−-]₱/.test(t)) && negShown.rep.ticks.includes('₱0'), 'all-negative axis ' + negShown.rep.ticks.join('|'));
+    check(negShown.rep.zeroGap != null && negShown.rep.zeroGap < 3, 'all-negative zero gap ' + negShown.rep.zeroGap);
+    await scenario('mobile-130-all-negative', allNeg, SHOWN, { scale: 1.3 });
+    await scenario('desktop-100-all-negative', allNeg, SHOWN, { desktop: true });
 
     await scenario('desktop-100-full-revealed', fullState(), SHOWN, { desktop: true });
     await scenario('desktop-100-full-masked', fullState(), null, { desktop: true, secrets: secretsFull });
