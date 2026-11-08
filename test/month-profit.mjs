@@ -265,10 +265,50 @@ async function revealMonth(page) {
 
 const SHOWN = { dash: { m: 0, stock: 0, month: 0, all: 0 } };
 
+async function scaleGeometry(browser) {
+  const year = (rows) => state({ version: 12, realizedMonths: rows, sales: [], stock: [], daily: {}, dailySold: {}, month: { name: 'November', realizedProfit: rows.find(r => r.month === '2026-11')?.profit || 0, purchasesCost: 0 }, dashboard: { totalRealized: 0, cashUsed: 0 } });
+  const measure = async (rows) => {
+    const { page, context } = await boot(browser, year(rows), { dash: { m: 0, stock: 0, month: 0, all: 0 } }, {});
+    await openProfit(page);
+    const g = await page.evaluate(() => {
+      const plot = document.querySelector('.mpplot').getBoundingClientRect();
+      const zero = document.querySelector('.mpzero').getBoundingClientRect();
+      const ticks = [...document.querySelectorAll('#yAxis .yt')].map(el => { const r = el.getBoundingClientRect(); return { v: Number(el.dataset.tick), top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2 }; });
+      const bars = [...document.querySelectorAll('.mpcol')].map(col => {
+        const up = col.querySelector('.bu').getBoundingClientRect(), dn = col.querySelector('.bd').getBoundingClientRect();
+        return { k: col.dataset.k, v: Number(col.dataset.p), upTop: up.top, upH: up.height, dnBot: dn.bottom, dnH: dn.height };
+      });
+      return { mode: document.querySelector('.mpplot').className, plot: { top: plot.top, bottom: plot.bottom, h: plot.height }, zero: (zero.top + zero.bottom) / 2, ticks, bars };
+    });
+    await context.close();
+    return g;
+  };
+  const near = (a, b, tol, msg) => check(Math.abs(a - b) <= tol, msg + ' (' + a.toFixed(1) + ' vs ' + b.toFixed(1) + ')');
+  const mix = await measure([{ month: '2026-01', profit: 100 }, { month: '2026-02', profit: -100 }, { month: '2026-03', profit: 40 }, { month: '2026-04', profit: -25 }]);
+  check(mix.mode.includes('mixed'), 'equal extremes use a centered scale');
+  const top = mix.ticks.find(t => t.v === 100), zTick = mix.ticks.find(t => t.v === 0), bot = mix.ticks.find(t => t.v === -100);
+  const up = mix.bars.find(b => b.v === 100), down = mix.bars.find(b => b.v === -100);
+  near(up.upTop, top.top, 8, 'profit bar of the top tick ends at that tick');
+  near(down.dnBot, bot.bottom, 8, 'loss bar of the bottom tick ends at that tick');
+  near(zTick.bottom, mix.zero, 8, 'zero tick sits on the zero line');
+  const smallUp = mix.bars.find(b => b.v === 40), smallDn = mix.bars.find(b => b.v === -25);
+  check(Math.abs(smallUp.upH / up.upH - 0.4) < 0.04, '40 vs 100 bar heights ' + smallUp.upH + '/' + up.upH);
+  check(Math.abs(smallDn.dnH / down.dnH - 0.25) < 0.04, '−25 vs −100 bar heights ' + smallDn.dnH + '/' + down.dnH);
+  const pos = await measure([{ month: '2026-06', profit: 80 }, { month: '2026-07', profit: 40 }]);
+  check(pos.mode.includes('pos') && !pos.mode.includes('mixed'), 'only profits use the full height from zero at the bottom');
+  near(pos.zero, pos.plot.bottom, 3, 'only-profit zero line is the bottom of the plot');
+  const big = pos.bars.find(b => b.v === 80);
+  near(big.upH, pos.plot.h, 4, 'largest profit uses the whole plot');
+  const neg = await measure([{ month: '2026-08', profit: -80 }, { month: '2026-09', profit: -20 }]);
+  check(neg.mode.includes('neg'), 'only losses grow down from zero at the top');
+  near(neg.zero, neg.plot.top, 3, 'only-loss zero line is the top of the plot');
+  near(neg.bars.find(b => b.v === -80).dnH, neg.plot.h, 4, 'largest loss uses the whole plot');
+}
 async function run() {
   await mkdir(OUT, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
+    await scaleGeometry(browser);
     // ----- pure aggregation, on the real functions -----
     {
       const { page, context, errs } = await boot(browser, fullState(), null, {});
@@ -396,7 +436,8 @@ async function run() {
     const fullShown = await scenario('mobile-100-full-revealed', fullState(), SHOWN, {});
     check(fullShown.rep.labels.some(l => l.includes('5,000.50')), 'January amount missing from the chart');
     check(fullShown.rep.text.includes('800,000.00'), 'revealed chart missing June amount');
-    check(fullShown.rep.text.includes('42,000.00'), 'revealed chart missing the loss amount');
+    check(fullShown.rep.text.includes('800,000.00') && fullShown.rep.labels.some(l => l.includes('42,000.00')), 'loss stays on August, while the axis uses the shared scale');
+    check(fullShown.rep.text.includes('−₱800,000.00') || fullShown.rep.text.includes('-₱800,000.00'), 'mixed scale bottom tick must be −800,000, not the smaller loss');
     check(!fullShown.rep.text.includes('777,777.77'), 'sales-only decoy was drawn as monthly profit');
     check(/\b2026\b/.test(fullShown.rep.text) && !/Jan 2026|Feb 2026|Nov 2026/.test(fullShown.rep.text), 'year once, not on each month');
     const pos = fullShown.rep.bars.filter(b => b.side === 'up' && b.h > 0.5);
@@ -406,6 +447,8 @@ async function run() {
     const jan = fullShown.rep.bars.find(b => b.k === '2026-01' && b.side === 'up');
     const feb = fullShown.rep.bars.find(b => b.k === '2026-02' && b.side === 'up');
     check(june && jan && june.h > jan.h * 8, 'bar height June vs January ' + JSON.stringify({ june, jan }));
+    const aug = fullShown.rep.bars.find(b => b.k === '2026-08' && b.side === 'dn');
+    check(june && aug && Math.abs(aug.h / june.h - 42000 / 800000) < 0.03, 'unequal loss/profit heights must share one scale ' + JSON.stringify({ june, aug }));
     check(feb && feb.h < 0.5, 'February zero should have no bar');
     check(fullShown.rep.bars.every(b => !b.outside), 'a bar draws outside its track');
 
