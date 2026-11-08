@@ -167,7 +167,7 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .mpneg i,.mppos i{display:block;height:100%;width:0;border-radius:7px}
 .mpneg i{background:var(--red)}
 .mppos i{background:var(--green)}
-.mpempty{padding:8px 0 2px}
+.mpempty{padding:8px 4px 2px;overflow-wrap:anywhere}
 .tiles .tile.wide{grid-column:1/-1}
 .stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
 .stk.main h3{font-size:20px;color:var(--brown)}
@@ -492,7 +492,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -2192,21 +2192,11 @@ function weekNav(d) {
   const el = $('#dWeek'); if (el) el.outerHTML = weekHTML();
 }
 
-// ---------- v41: profit by month (replaces the Dashboard "Current base / gram" tile) ----------
-// Realized profit, same definition as the sheet's Dashboard column G, using what getState already sends (Api.gs v11):
-//   • Each Sales-tab row (ST.sales) contributes its realized profit: actual received − cost. The refining fee is inside
-//     that cost and is never shown here. The date is the sale date (Sales!A, calendar YYYY-MM-DD), not the purchase
-//     date and not the refining date. A sale dated 31 Dec and one dated 1 Jan stay in different months.
-//   • A recorded batch is already one of those sales. Its profit is not added again from ST.batches. A batch that is
-//     sold but not yet on the Sales tab is not part of Dashboard realized profit, so it is not part of this chart.
-//   • Item-level realized profit (Purchases / Archive / Archive Totals, by sold date) is not in getState. It is not guessed.
-//   • ST.month.realizedProfit is the Dashboard figure for the named month (2026 compilation summary + sales + item
-//     profit). It replaces that month's sales sum, so the bar matches the month card. Compilation amounts for other
-//     months are not in the payload.
-//   • If the sheet sends the Dashboard column as ST.realizedMonths, or month.months / dashboard.months
-//     ([{month:'2026-01', profit:n}] or {'2026-01': n}), that series is the whole chart and sales are not added on top.
-// One bar per month, profit only (no revenue or cost bars). Hidden profit (default) draws every month the same:
-// no fill, no amount, no axis figure, no tooltip.
+// ---------- v42: profit by month (replaces the Dashboard "Current base / gram" tile) ----------
+// Bars are only ST.realizedMonths from Api.gs v12: each month's Dashboard realized profit (compilation summary
+// + sales by sale date + item/archive realized profit by sold date, dashboard cell when that row exists).
+// Sales rows alone are not a full history, so a v11 payload shows a note instead of a chart. Profit only.
+// Hidden profit (default) draws every month the same: no fill, no amount, no axis, no tooltip.
 let dashMo = 0;   // 0 = latest 12-month page, 1 = the page before that, ...
 const MON_FULL = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 function monthKeyOK(y, mo, day) {
@@ -2229,29 +2219,21 @@ function monthNameKey(name) {
   if (m) { const t = m[2].toLowerCase(), i = MON_FULL.findIndex(x => x === t || x.slice(0, 3) === t.slice(0, 3)); if (i >= 0) return monthKeyOK(m[1], i + 1); }
   return '';
 }
-const saleMonthKey = date => { const m = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? monthKeyOK(m[1], m[2], m[3]) : ''; };
 function moneyOf(v) {
   if (v == null || v === '') return null;
   const n = typeof v === 'number' ? v : parseNum(v);
   return n == null || !isFinite(n) ? null : n;
 }
-function explicitMonthMap() {
-  if (!ST) return null;
-  const src = ST.realizedMonths || (ST.month && ST.month.months) || (ST.dashboard && ST.dashboard.months);
-  if (!src) return null;
-  const map = {};
-  const put = (k, v) => { const key = monthNameKey(k), n = moneyOf(v); if (key && n != null) map[key] = round2(n); };
-  if (Array.isArray(src)) src.forEach(row => { if (row && typeof row === 'object') put(row.month || row.ym || row.date || row.name, row.profit != null ? row.profit : row.realizedProfit); });
-  else if (typeof src === 'object') Object.keys(src).forEach(k => put(k, src[k]));
-  return Object.keys(map).length ? map : null;
-}
 function profitMonthMap() {
-  const explicit = explicitMonthMap(); if (explicit) return explicit;
+  const src = ST && ST.realizedMonths;
+  if (!Array.isArray(src)) return null;   // v11: no full history — do not invent one from sales
   const map = {};
-  (ST && ST.sales || []).forEach(s => { if (!s) return; const n = moneyOf(s.profit); if (n == null) return; const k = saleMonthKey(s.date); if (k) map[k] = (map[k] || 0) + n; });
-  Object.keys(map).forEach(k => { map[k] = round2(map[k]); });
-  const m = ST && ST.month;
-  if (m && hasNum(m.realizedProfit)) map[monthNameKey(m.name) || todayISO().slice(0, 7)] = round2(m.realizedProfit);
+  src.forEach(row => {
+    if (!row || typeof row !== 'object') return;
+    const key = monthNameKey(row.month || row.ym || row.date);
+    const n = moneyOf(row.profit != null ? row.profit : row.realizedProfit);
+    if (key && n != null) map[key] = round2(n);
+  });
   return map;
 }
 const monthIndex = key => +key.slice(0, 4) * 12 + (+key.slice(5, 7) - 1);
@@ -2271,9 +2253,11 @@ function profitMonthWindow(map) {
   return { start, end, moreBefore: start > span.start, moreAfter: end < span.end };
 }
 function monthChartHTML() {
-  const map = profitMonthMap(), keys = Object.keys(map);
   const on = gShown('dash:month');
   const head = `<h3><span>Profit by month</span>${eyeBtn('dash:month')}</h3>`;
+  const map = profitMonthMap();
+  if (!map) return `<div class="stk mp" id="dMonths">${head}<div class="empty mpempty" id="moNeed">Full monthly profit needs Api.gs v12 on the sheet. This month's figure above is the complete total.</div></div>`;
+  const keys = Object.keys(map);
   if (!keys.length) return `<div class="stk mp" id="dMonths">${head}<div class="empty mpempty" id="moEmpty">No realized profit yet.</div></div>`;
   const W = profitMonthWindow(map), cur = todayISO().slice(0, 7);
   let hasPos = false, hasNeg = false;

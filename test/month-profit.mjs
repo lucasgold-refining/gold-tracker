@@ -1,4 +1,5 @@
-// v41: realized-profit month chart. Runs against the real page in Chromium.
+// v42: monthly chart only when Api.gs v12 sends realizedMonths. Example figures, not real ones.
+// Runs against the real page in Chromium.
 // Mobile: 412x915 CSS px, DPR 3.5, isMobile, hasTouch, text 100/115/130%.
 // Text scale multiplies the stylesheet's px font sizes (layout px stay), which is how
 // Chrome on a Samsung phone grows text without changing the CSS viewport.
@@ -6,7 +7,7 @@ import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const OUT = '/opt/cursor/artifacts/gold-v41';
+const OUT = '/opt/cursor/artifacts/gold-v42';
 const PAGE_URL = process.env.GOLD_URL || 'http://127.0.0.1:8765/index.html#dash';
 const fails = [];
 const notes = [];
@@ -16,9 +17,27 @@ async function unstick(page) {
 async function restick(page) {
   await page.evaluate(() => { const h = document.querySelector('header'); if (h) h.style.position = ''; });
 }
+async function markExample(page, sel) {
+  await page.evaluate(sel => {
+    const tag = () => {
+      const d = document.createElement('div');
+      d.className = 'exMark';
+      d.textContent = 'EXAMPLE DATA — not real figures';
+      d.setAttribute('style', 'background:#111;color:#ffe08a;text-align:center;font:700 14px/1.3 sans-serif;padding:6px 8px;');
+      return d;
+    };
+    if (!document.getElementById('exMarkTop')) {
+      const t = tag(); t.id = 'exMarkTop';
+      document.body.insertBefore(t, document.body.firstChild);
+    }
+    const host = sel ? document.querySelector(sel) : null;
+    if (host && !host.querySelector('.exMark')) host.insertBefore(tag(), host.firstChild);
+  }, sel || '');
+}
 const shot = async (page, name) => {
   const file = path.join(OUT, name + '.png');
   await unstick(page);
+  await markExample(page, '');
   await page.screenshot({ path: file, fullPage: true });
   await restick(page);
   notes.push(file);
@@ -27,6 +46,7 @@ const shot = async (page, name) => {
 const shotEl = async (page, sel, name) => {
   const file = path.join(OUT, name + '.png');
   await unstick(page);
+  await markExample(page, sel);
   await page.locator(sel).first().screenshot({ path: file });
   await restick(page);
   notes.push(file);
@@ -54,26 +74,29 @@ function state(extra) {
     _syncedAt: '2026-11-08T07:00:00.000Z'
   }, extra);
 }
-const FULL_SALES = [
-  { date: '2025-12-31', profit: 111111.11, actual: 900000, batch: 'R-20251230', cost: 788888.89 },
-  { date: '2026-01-01', profit: 2000, actual: 5000, batch: 'R-20251231' },
-  { date: '2026-01-20', profit: 3000.5, actual: 8000 },
-  { date: '2026-02-31', profit: 999999, actual: 1 },          // not a real day: ignored
-  { date: 'not-a-date', profit: 888888, actual: 1 },
-  { date: '2026-03-15', profit: -2500.25, actual: 1000, cost: 3500.25 },
-  { date: '2026-06-01', profit: 800000, actual: 5000000, batch: 'R-20260531' },
-  { date: '2026-08-09', profit: -42000, actual: 10000, batch: 'R-20260808' },
-  { date: '2026-11-02', profit: 150000, actual: 900000, batch: 'R-20261101', cost: 750000 },
-  { date: '2026-11-08', profit: 50500.5, actual: 400000, batch: 'R-20261107' }
+// Chart figures below are made-up examples. They are not taken from the live sheet.
+const EXAMPLE_MONTHS = [
+  { month: '2025-12', profit: 111111.11 },
+  { month: '2026-01', profit: 5000.5 },
+  { month: '2026-02', profit: 0 },
+  { month: '2026-03', profit: -2500.25 },
+  { month: '2026-04', profit: 0 },
+  { month: '2026-05', profit: 0 },
+  { month: '2026-06', profit: 800000 },
+  { month: '2026-07', profit: 0 },
+  { month: '2026-08', profit: -42000 },
+  { month: '2026-09', profit: 0 },
+  { month: '2026-10', profit: 0 },
+  { month: '2026-11', profit: 200500.5 }
 ];
 function fullState() {
   return state({
-    sales: FULL_SALES,
-    // Same figure the month card shows. Equals the November sales sum, so the bar matches the card.
-    month: { name: 'November 2026', realizedProfit: 200500.5, purchasesCost: 2500000 },
+    version: 12,
+    realizedMonths: EXAMPLE_MONTHS,
+    // A sales-only figure must not appear on the chart. The series is the whole history.
+    sales: [{ date: '2026-11-08', profit: 777777.77, actual: 1, batch: 'R-DECOY' }],
+    month: { name: 'November', realizedProfit: 200500.5, purchasesCost: 2500000 },
     dashboard: { totalRealized: 1072111.86, cashUsed: 9000000 },
-    // A sold batch whose profit is already the November sale must not be added again.
-    // A sold-but-not-recorded batch is not Dashboard realized profit either.
     batches: [
       { id: 'R-20261101', status: 'Sold', items: 40, rawG: 20, refinedG: 18, costInclFee: 750000, actualProfit: 150000, sellDate: '2026-11-02', actualValue: 900000, base: 8000 },
       { id: 'R-20261105', status: 'Sold', items: 3, actualProfit: 999999, sellDate: '2026-11-06', costInclFee: 10, base: 8000 }
@@ -82,21 +105,27 @@ function fullState() {
 }
 function longState() {
   return state({
+    version: 12,
+    realizedMonths: [{ month: '2026-10', profit: -12345678.9 }, { month: '2026-11', profit: 12345678.9 }],
+    sales: [{ date: '2026-11-03', profit: 777777.77, actual: 200, batch: 'R-DECOY' }],
     stock: [{ no: 1, bno: 1, date: '2026-11-08', weightBhy: 24691.34, grams: 12345.67, purity: 0.9999, cost: 12345678.9, status: 'In stock' }],
-    sales: [
-      { date: '2026-10-15', profit: -12345678.9, actual: 100, cost: 12345778.9, batch: 'R-20261014' },
-      { date: '2026-11-03', profit: 100, actual: 200, batch: 'R-20261102' }
-    ],
-    month: { name: 'November 2026', realizedProfit: 12345678.9, purchasesCost: 12345678.9 },
+    month: { name: 'November', realizedProfit: 12345678.9, purchasesCost: 12345678.9 },
     dashboard: { totalRealized: 12345678.9, cashUsed: 12345678.9 },
     daily: { '2026-11-08': 12345.67 }
   });
 }
 function emptyNone() {
-  return state({ stock: [], sales: [], daily: {}, dailySold: {}, month: null, dashboard: { totalRealized: 0, cashUsed: 0 } });
+  return state({ version: 12, realizedMonths: [], stock: [], sales: [], daily: {}, dailySold: {}, month: null, dashboard: { totalRealized: 0, cashUsed: 0 } });
 }
 function emptyZero() {
-  return state({ stock: [], sales: [], daily: {}, dailySold: {}, month: { name: 'November 2026', realizedProfit: 0, purchasesCost: 0 }, dashboard: { totalRealized: 0, cashUsed: 0 } });
+  return state({ version: 12, realizedMonths: [{ month: '2026-11', profit: 0 }], stock: [], sales: [], daily: {}, dailySold: {}, month: { name: 'November', realizedProfit: 0, purchasesCost: 0 }, dashboard: { totalRealized: 0, cashUsed: 0 } });
+}
+function v11State() {
+  return state({
+    version: 11,
+    sales: [{ date: '2026-01-01', profit: 777777.77, actual: 1 }],
+    month: { name: 'November', realizedProfit: 4242, purchasesCost: 100 }
+  });
 }
 
 async function boot(browser, st, tm, opts) {
@@ -241,55 +270,24 @@ async function run() {
       const { page, context, errs } = await boot(browser, fullState(), null, {});
       const math = await page.evaluate(() => {
         const out = {};
-        dashMo = 0;
-        const map = profitMonthMap();
-        out.map = map;
-        out.jan = map['2026-01'];
-        out.feb = map['2026-02'];
-        out.mar = map['2026-03'];
-        out.dec = map['2025-12'];
-        out.nov = map['2026-11'];
-        out.aug = map['2026-08'];
-        out.junk = map['2026-02'] === 999999 || Object.values(map).some(v => v === 999999 || v === 888888);
-        // batches ignored: 999999 is not a month value; November is the sales sum, not sales + batch
-        out.novIsSales = map['2026-11'] === 200500.5;
-        // override replaces, does not add
-        ST.month.realizedProfit = 10;
-        out.override = profitMonthMap()['2026-11'];
-        ST.month.realizedProfit = 200500.5;
-        // negative net in one month
-        ST.sales = [{ date: '2024-05-01', profit: 100.1 }, { date: '2024-05-20', profit: -40.4 }, { date: '2024-05-21', profit: '1,000.00' }];
-        ST.month = null;
-        out.may = profitMonthMap()['2024-05'];
-        // half-up / half-away and the year boundary
-        ST.sales = [{ date: '2025-12-31', profit: 1.004 }, { date: '2025-12-31', profit: 1.004 }, { date: '2026-01-01', profit: -1.005 }];
-        const m2 = profitMonthMap();
-        out.boundary = { dec: m2['2025-12'], jan: m2['2026-01'] };
-        // explicit Dashboard series wins and is not added to sales
-        ST.sales = [{ date: '2026-04-01', profit: 5 }];
-        ST.realizedMonths = [{ month: '2026-01', profit: 0 }, { month: '2026-02', profit: -20 }, { ym: '2026-03', realizedProfit: '1,500.50' }];
-        out.series = profitMonthMap();
+        const first = profitMonthMap();
+        const decoy = monthChartHTML();
+        out.hadSeries = !!(first && first['2025-12'] === 111111.11 && first['2026-11'] === 200500.5 && !decoy.includes('777'));
         delete ST.realizedMonths;
-        ST.month = { months: { '2026-07': 8 } };
-        out.viaMonth = profitMonthMap();
-        ST.month = null;
-        ST.dashboard = { months: [] };
-        ST.sales = [{ date: '2026-09-09', profit: 42, cost: 9999 }];
-        out.costIgnored = profitMonthMap()['2026-09'];
-        // empty
-        ST.sales = [];
-        ST.dashboard = {};
-        out.empty = profitMonthMap();
-        // zero profit sale still marks the month
-        ST.sales = [{ date: '2026-04-04', profit: 0 }];
-        out.zeroSale = profitMonthMap()['2026-04'];
-        // window: Oct 2024 through Nov 2026, plus today (Nov 2026)
-        const sales = [];
-        for (let y = 2024, m = 10, n = 0; y < 2026 || m <= 11; ) {
-          sales.push({ date: y + '-' + String(m).padStart(2, '0') + '-01', profit: 1 + n });
-          n++; m++; if (m > 12) { m = 1; y++; }
+        ST.sales = [{ date: '2026-01-01', profit: 777777.77 }];
+        out.v11 = profitMonthMap();
+        out.v11html = monthChartHTML();
+        ST.realizedMonths = [{ month: '2026-01', profit: 0 }, { month: '2026-02', profit: -20 }, { month: '2026-03', realizedProfit: '1,500.50' }];
+        ST.sales = [{ date: '2026-04-01', profit: 5, cost: 9999 }];
+        out.series = profitMonthMap();
+        out.ignoredSale = monthChartHTML().includes('5.00') || monthChartHTML().includes('777');
+        const series = [];
+        for (let y = 2024, m = 10; y < 2026 || m <= 11; ) {
+          series.push({ month: y + '-' + String(m).padStart(2, '0'), profit: m === 1 ? -5000 : 1000 * m });
+          m++; if (m > 12) { m = 1; y++; }
         }
-        ST.sales = sales;
+        ST.realizedMonths = series;
+        ST.sales = [{ date: '2026-11-01', profit: 1 }];
         dashMo = 0;
         const pages = [];
         for (let i = 0; i < 5; i++) {
@@ -301,25 +299,14 @@ async function run() {
           dashMo += 1;
         }
         out.pages = pages;
-        out.errs = [];
         return out;
       });
       check(!errs.length, 'page errors ' + errs.join('; '));
-      check(math.dec === 111111.11, 'Dec 2025 profit ' + math.dec);
-      check(math.jan === 5000.5, 'Jan crosses days ' + math.jan);
-      check(math.feb === undefined, 'invalid 31 Feb created a month');
-      check(math.mar === -2500.25, 'negative March ' + math.mar);
-      check(math.aug === -42000, 'negative August ' + math.aug);
-      check(math.novIsSales, 'November is the sales sum, not sales plus batch profit');
-      check(!math.junk, 'invalid or unrecorded batch profit was included');
-      check(math.override === 10, 'current month figure should replace the sales sum, got ' + math.override);
-      check(math.may === 1059.7, 'month net ' + math.may);
-      check(math.boundary.dec === 2.01 && math.boundary.jan === -1.01, 'year boundary rounding ' + JSON.stringify(math.boundary));
-      check(math.series['2026-01'] === 0 && math.series['2026-02'] === -20 && math.series['2026-03'] === 1500.5 && math.series['2026-04'] === undefined, 'explicit series ' + JSON.stringify(math.series));
-      check(math.viaMonth['2026-07'] === 8 && Object.keys(math.viaMonth).length === 1, 'month.months series');
-      check(math.costIgnored === 42, 'cost must not be added into profit');
-      check(Object.keys(math.empty).length === 0, 'empty map');
-      check(math.zeroSale === 0, 'zero profit sale');
+      check(math.v11 === null, 'v11 payload must not build a month map');
+      check(/id="moNeed"/.test(math.v11html) && !/777,777\.77/.test(math.v11html), 'v11 chart must be the note, not sales: ' + math.v11html.slice(0, 240));
+      check(math.series['2026-01'] === 0 && math.series['2026-02'] === -20 && math.series['2026-03'] === 1500.5 && math.series['2026-04'] === undefined, 'series only ' + JSON.stringify(math.series));
+      check(!math.ignoredSale, 'a sales row was drawn on top of the series');
+      check(math.hadSeries, 'example series missing from the chart html');
       check(math.pages.length === 3, 'expected 3 month pages, got ' + math.pages.length);
       const flat = math.pages.flatMap(p => p.keys);
       const uniq = new Set(flat);
@@ -399,6 +386,10 @@ async function run() {
     const secretsFull = ['111,111.11', '5,000.50', '2,500.25', '800,000.00', '42,000.00', '200,500.50', '150,000.00', '50,500.50'];
     const secretsLong = ['12,345,678.90'];
 
+    const v11 = await scenario('mobile-100-v11-note', v11State(), null, { secrets: ['777,777.77'] });
+    check(/Api\.gs v12/.test(v11.rep.text) && !v11.rep.bars.length, 'v11 should explain the missing history, not draw bars');
+    await scenario('mobile-130-v11-note', v11State(), null, { scale: 1.3, secrets: ['777,777.77'] });
+    await scenario('desktop-100-v11-note', v11State(), null, { desktop: true, secrets: ['777,777.77'] });
     await scenario('mobile-100-empty-none-masked', emptyNone(), null, { secrets: ['₱0.00'] });
     await scenario('mobile-100-empty-zero-masked', emptyZero(), null, { secrets: ['0.00'] });
     await scenario('mobile-100-empty-zero-revealed', emptyZero(), SHOWN, {});
@@ -409,6 +400,7 @@ async function run() {
     check(fullShown.rep.text.includes('111,111.11'), 'revealed chart missing Dec profit');
     check(fullShown.rep.text.includes('5,000.50'), 'revealed chart missing January sum');
     check(fullShown.rep.text.includes('2,500.25'), 'revealed chart missing negative March');
+    check(!fullShown.rep.text.includes('777,777.77'), 'sales-only decoy was drawn as monthly profit');
     check(/Feb 2026[\s\S]{0,40}₱0\.00/.test(fullShown.rep.text), 'February should show as zero profit');
     const pos = fullShown.rep.bars.filter(b => b.side === 'mppos' && b.w > 0.5);
     const neg = fullShown.rep.bars.filter(b => b.side === 'mpneg' && b.w > 0.5);
@@ -487,12 +479,12 @@ async function run() {
 
     // earlier page still has month and year, and no horizontal overflow
     await scenario('mobile-100-earlier-page', (() => {
-      const sales = [];
+      const realizedMonths = [];
       for (let y = 2024, m = 10; y < 2026 || m <= 11; ) {
-        sales.push({ date: y + '-' + String(m).padStart(2, '0') + '-01', profit: (m === 1 ? -5000 : 1000 * m) });
+        realizedMonths.push({ month: y + '-' + String(m).padStart(2, '0'), profit: m === 1 ? -5000 : 1000 * m });
         m++; if (m > 12) { m = 1; y++; }
       }
-      return state({ sales, month: { name: 'November 2026', realizedProfit: 11000, purchasesCost: 0 }, dashboard: { totalRealized: 1, cashUsed: 0 } });
+      return state({ version: 12, realizedMonths, sales: [{ date: '2026-11-01', profit: 777777.77 }], month: { name: 'November', realizedProfit: 11000, purchasesCost: 0 }, dashboard: { totalRealized: 1, cashUsed: 0 } });
     })(), SHOWN, { earlier: true });
   } finally {
     await browser.close();
