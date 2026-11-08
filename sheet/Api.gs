@@ -1171,11 +1171,11 @@ function goldApiDashMonthTable_(dash) {
   var vals = dash.vals.slice(0, Math.min(Math.max(dash.last || 1, 1), 40));
   for (var i = 0; i < vals.length; i++) {
     var j = vals[i].indexOf('Month');
-    if (j < 0 || !/purchases cost/i.test(String(vals[i][j + 1] || '')) || !/realized profit/i.test(String(vals[i][j + 3] || ''))) continue;
+    if (j < 0 || !/purchases cost/i.test(String(vals[i][j + 1])) || !/realized profit/i.test(String(vals[i][j + 3]))) continue;
     for (var k = i + 1; k < vals.length; k++) {
-      if (/^total/i.test(String(vals[k][j] || '').trim())) break;
+      if (/^total/i.test(String(vals[k][j]))) break;   // same stop as v11 goldApiMonth_
       var ym = goldApiMonthYm_(vals[k][j]);
-      if (!ym) continue;
+      if (!ym || out[ym]) continue;   // v11 stops at the first Dashboard row for a month
       out[ym] = { profit: goldApiNum_(vals[k][j + 3]), cost: goldApiNum_(vals[k][j + 1]) };
     }
     break;
