@@ -141,32 +141,45 @@ input.pur::placeholder{font-weight:800;font-size:1.25em;color:#6b6456;opacity:1}
 .wkempty{padding:6px 0 2px;text-align:center}
 .wknote{margin-top:6px;font-size:13px}
 @media (max-width:360px){.wkv{font-size:10.5px}.wkbar{height:90px}}
-/* v41: profit by month (one bar per month, profit only). Width encodes the amount, so a hidden chart has no fill. */
-.stk.mp{background:#fff;border:2px solid var(--line);border-left:2px solid var(--line);padding:12px 12px 10px;margin:0 0 14px;min-width:0;max-width:100%}
-.stk.mp h3{align-items:center}
-.stk.mp .wkhead{align-items:center;margin-bottom:10px}
-.stk.mp .wknav button{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0}
-.mplist{min-width:0}
-.mprow{min-width:0;margin:0 0 8px}
-.mprow:last-child{margin-bottom:0}
-.mptop{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
-.mpl{flex:none;font-size:14px;font-weight:800;color:var(--brown);white-space:nowrap}
-.mprow.cur .mpl{background:var(--gold);color:var(--ink);border-radius:6px;padding:0 5px}
-.mpv{flex:1 1 auto;min-width:0;text-align:right;font-size:18px;font-weight:900;line-height:1.2}
-.mpv .pv{white-space:nowrap}
-.mptrack{position:relative;display:flex;align-items:stretch;height:14px;margin-top:3px;border-radius:7px;background:#f4efe1;overflow:hidden}
-.mpneg,.mppos{height:100%;min-width:0;display:flex;align-items:stretch}
-.mpneg{justify-content:flex-end}
-.mppos{justify-content:flex-start}
-.mplist:not(.mixed) .mpneg{display:none}
-.mplist:not(.mixed):not(.neg) .mppos{flex:1 1 auto}
-.mplist.neg .mppos{display:none}
-.mplist.neg .mpneg{display:flex;flex:1 1 auto;justify-content:flex-start}
-.mplist.mixed .mpneg,.mplist.mixed .mppos{flex:1 1 50%}
-.mplist.mixed .mptrack::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:#c4b89a;pointer-events:none}
-.mpneg i,.mppos i{display:block;height:100%;width:0;border-radius:7px}
-.mpneg i{background:var(--red)}
-.mppos i{background:var(--green)}
+/* v44: one year, Jan–Dec. Zero sits on the bottom and positive bars use the whole plot. Losses are a red mark under the month, not a downward bar. Axis ticks stay short (₱200k). Hidden profit draws none of this. */
+.stk.mp{background:#fff;border:2px solid var(--line);border-left:2px solid var(--line);padding:10px 10px 6px;margin:0 0 14px;min-width:0;max-width:100%;container-type:inline-size;container-name:mp}
+.stk.mp h3{align-items:center;flex-wrap:wrap;row-gap:4px;margin-bottom:2px}
+.stk.mp h3>span:first-child{min-width:0}
+.stk.mp .wknav{display:flex;gap:4px;flex:none}
+.stk.mp .wknav button{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;color:#3c3830;font-size:18px;font-weight:650;line-height:1}
+.yrrow{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:0 0 2px;min-width:0}
+#moYear{font-size:17px;font-weight:800;letter-spacing:0;min-width:3em;text-align:center;line-height:1;color:var(--ink)}
+.mpframe{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:4px;min-width:0;align-items:start}
+.mpyaxis{height:120px;min-width:32px;max-width:84px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end}
+.mpyaxis.flat{justify-content:flex-end}
+.yt{position:static;margin:0;text-align:right;font-size:11px;font-weight:650;line-height:1;color:#8a8478;white-space:nowrap;pointer-events:none}
+.mpmain{position:relative;min-width:0;padding-bottom:22px}
+.mpplot{position:relative;height:120px;min-width:0;border-radius:8px;background:#fbf8f1}
+@container mp (min-width:720px){.mpyaxis,.mpplot{height:148px}}
+.mpgrid{position:absolute;inset:0;pointer-events:none;z-index:0}
+.mpgrid i{position:absolute;left:0;right:0;height:1px;background:rgba(90,80,50,.1)}
+.mpgrid i:first-child{top:0}
+.mpgrid i:last-child{top:50%}
+.mpzero{position:absolute;left:0;right:0;bottom:0;height:1.5px;background:#c4bba8;z-index:2;pointer-events:none}
+.mpplot.flat .mpgrid{display:none}
+.mpplot.masked{background:#f4efe4}
+.mpplot.masked .mpgrid,.mpplot.masked .mpzero,.mpplot.masked .mptip{display:none}
+.mptip{position:absolute;z-index:4;left:4px;right:4px;top:4px;margin:0;text-align:center;font-size:12px;font-weight:750;line-height:1.25;color:var(--ink);background:rgba(255,252,245,.96);border:1px solid rgba(90,80,50,.12);border-radius:8px;padding:3px 8px;pointer-events:none;overflow-wrap:anywhere}
+.mptip.loss{color:var(--red)}
+.mptip[hidden]{display:none}
+.mpcols{position:relative;z-index:1;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));height:100%;min-width:0}
+.mpcol{position:relative;appearance:none;-webkit-appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;color:inherit;min-width:0;width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center;cursor:pointer;border-radius:4px;touch-action:manipulation}
+.mpcol:focus{outline:none}
+.mpcol:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.mpplot:not(.masked) .mpcol:hover,.mpplot:not(.masked) .mpcol.on,.mpplot:not(.masked) .mpcol:focus-visible{background:rgba(212,160,23,.16)}
+.mpcol .bu{display:block;width:clamp(4px,50%,18px);height:0;border-radius:3px 3px 1px 1px;background:var(--green);pointer-events:none}
+.mpl{position:absolute;top:calc(100% + 3px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;text-align:center;font-size:10px;font-weight:650;line-height:1.05;letter-spacing:-.02em;color:#8d887e;white-space:nowrap;pointer-events:none}
+@container mp (max-width:420px){.mpl{font-size:9px}}
+.mpl.cur{color:var(--ink);background:var(--gold);border-radius:4px}
+.mpcol.loss .mpl{color:var(--red);background:transparent}
+.mpcol.loss .mpl.cur{background:var(--gold)}
+.ldot{width:6px;height:6px;border-radius:50%;background:transparent;visibility:hidden;display:block}
+.mpcol.loss .ldot{background:var(--red);visibility:visible}
 .mpempty{padding:8px 4px 2px;overflow-wrap:anywhere}
 .tiles .tile.wide{grid-column:1/-1}
 .stk.main{background:var(--goldbg);border:2px solid var(--goldline);border-left:8px solid var(--ink);padding:16px 18px}
@@ -492,7 +505,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 42;
+const APP_VERSION = 44;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -591,7 +604,7 @@ function fitNums() {
   L.forEach(x => { if (x.fs == null) return; const f = x.c.dataset.fg ? grp[x.c.dataset.fg] : x.fs; if (f < x.base - 0.05) x.el.style.fontSize = f + 'px'; });
 }
 let fitT = 0;
-window.addEventListener('resize', () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(fitNums); });
+window.addEventListener('resize', () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(() => { fitNums(); fitMonthLabs(); }); });
 function toggleTab(e) {   // main toggle: flip its own state, every eye on the tab follows. Never re-draws the page.
   if (e) { e.preventDefault(); e.stopPropagation(); } eyeLetGo(e);
   const t = view; if (!TABS.includes(t)) return;
@@ -2192,12 +2205,11 @@ function weekNav(d) {
   const el = $('#dWeek'); if (el) el.outerHTML = weekHTML();
 }
 
-// ---------- v42: profit by month (replaces the Dashboard "Current base / gram" tile) ----------
-// Bars are only ST.realizedMonths from Api.gs v12: each month's Dashboard realized profit (compilation summary
-// + sales by sale date + item/archive realized profit by sold date, dashboard cell when that row exists).
-// Sales rows alone are not a full history, so a v11 payload shows a note instead of a chart. Profit only.
-// Hidden profit (default) draws every month the same: no fill, no amount, no axis, no tooltip.
-let dashMo = 0;   // 0 = latest 12-month page, 1 = the page before that, ...
+// ---------- v44: profit by month, one calendar year (Jan–Dec) ----------
+// Bars are only ST.realizedMonths from Api.gs v12. A v11 payload shows a note, not a partial chart.
+// Zero is the bottom of the plot. Positive bars use that full height. A loss is a red mark under the month, never a bar below zero.
+// Axis labels stay short (₱200k, ₱1.2M). Hover, tap, or keyboard focus shows the exact amount. Hidden profit shows none of it.
+let dashYear = 0, moPin = '', moHover = '';
 const MON_FULL = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 function monthKeyOK(y, mo, day) {
   y = +y; mo = +mo;
@@ -2236,73 +2248,160 @@ function profitMonthMap() {
   });
   return map;
 }
-const monthIndex = key => +key.slice(0, 4) * 12 + (+key.slice(5, 7) - 1);
-const keyFromIndex = i => { const y = Math.floor(i / 12), m = i % 12; return y + '-' + String(m + 1).padStart(2, '0'); };
-const monthLabel = key => MON[+key.slice(5, 7) - 1] + ' ' + key.slice(0, 4);
-function profitSpan(map) {
-  const cur = monthIndex(todayISO().slice(0, 7));
-  let start = cur, end = cur;
-  Object.keys(map).forEach(k => { const i = monthIndex(k); if (i < start) start = i; if (i > end) end = i; });
-  return { start, end };
+function yearList(map) {
+  const ys = [...new Set(Object.keys(map || {}).map(k => +k.slice(0, 4)).filter(y => y >= 1990 && y <= 2200))].sort((a, b) => a - b);
+  const cur = +todayISO().slice(0, 4);
+  if (!ys.length) ys.push(cur);
+  else if (cur < ys[0]) ys.unshift(cur);
+  else if (cur > ys[ys.length - 1]) ys.push(cur);
+  return ys;
 }
-function profitMonthWindow(map) {
-  const span = profitSpan(map), total = span.end - span.start + 1, pages = Math.max(1, Math.ceil(total / 12));
-  const page = Math.max(0, Math.min(pages - 1, dashMo));
-  dashMo = page;
-  const end = span.end - page * 12, start = Math.max(span.start, end - 11);
-  return { start, end, moreBefore: start > span.start, moreAfter: end < span.end };
+function activeYear(map) {
+  const ys = yearList(map), cur = +todayISO().slice(0, 4);
+  if (!dashYear || ys.indexOf(dashYear) < 0) dashYear = ys.indexOf(cur) >= 0 ? cur : ys[ys.length - 1];
+  const i = ys.indexOf(dashYear);
+  return { year: dashYear, years: ys, moreBefore: i > 0, moreAfter: i >= 0 && i < ys.length - 1 };
+}
+function axisAmt(v) {
+  const n = Number(v);
+  if (!isFinite(n) || Math.abs(n) < 0.005) return '₱0';
+  const neg = n < 0, a = Math.abs(n);
+  let div = 1, suf = '';
+  if (a >= 1e9) { div = 1e9; suf = 'B'; }
+  else if (a >= 1e6) { div = 1e6; suf = 'M'; }
+  else if (a >= 1e3) { div = 1e3; suf = 'k'; }
+  const x = a / div, tol = Math.max(0.02, a * 0.0005);
+  let text = '';
+  for (let d = 0; d <= 4; d++) {
+    const r = Number(x.toFixed(d));
+    if (!(r > 0)) continue;
+    if (d === 4 || Math.abs(r * div - a) <= tol) { text = r.toFixed(d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''); break; }
+  }
+  if (!text || text === '0') text = String(Number(x.toPrecision(2)));
+  return (neg ? '−' : '') + '₱' + text + suf;
+}
+function monthAria(lab, year, v, on) {
+  if (!on) return lab + ', profit hidden';
+  if (v < -0.004) return lab + ' ' + year + ', loss, ' + peso(v);
+  return lab + ' ' + year + ', ' + peso(v);
 }
 function monthChartHTML() {
   const on = gShown('dash:month');
   const head = `<h3><span>Profit by month</span>${eyeBtn('dash:month')}</h3>`;
   const map = profitMonthMap();
   if (!map) return `<div class="stk mp" id="dMonths">${head}<div class="empty mpempty" id="moNeed">Full monthly profit needs Api.gs v12 on the sheet. This month's figure above is the complete total.</div></div>`;
-  const keys = Object.keys(map);
-  if (!keys.length) return `<div class="stk mp" id="dMonths">${head}<div class="empty mpempty" id="moEmpty">No realized profit yet.</div></div>`;
-  const W = profitMonthWindow(map), cur = todayISO().slice(0, 7);
-  let hasPos = false, hasNeg = false;
+  if (!Object.keys(map).length) return `<div class="stk mp" id="dMonths">${head}<div class="empty mpempty" id="moEmpty">No realized profit yet.</div></div>`;
+  const Y = activeYear(map), cur = todayISO().slice(0, 7);
   const rows = [];
-  for (let i = W.start; i <= W.end; i++) {
-    const k = keyFromIndex(i), v = map[k] != null ? map[k] : 0;
-    if (v > 0.004) hasPos = true; if (v < -0.004) hasNeg = true;
-    rows.push({ k, v });
+  let hasPos = false, maxPos = 0;
+  for (let m = 1; m <= 12; m++) {
+    const k = Y.year + '-' + String(m).padStart(2, '0'), v = map[k] != null ? map[k] : 0;
+    if (v > 0.004) { hasPos = true; if (v > maxPos) maxPos = v; }
+    rows.push({ k, v, lab: MON[m - 1] });
   }
-  const mixed = on && hasPos && hasNeg, neg = on && hasNeg && !hasPos;
-  const range = W.start === W.end ? monthLabel(keyFromIndex(W.start)) : monthLabel(keyFromIndex(W.start)) + ' – ' + monthLabel(keyFromIndex(W.end));
-  const bars = rows.map(r => {
-    const label = monthLabel(r.k);
-    const aria = on ? `${label}, ${peso(r.v)}` : `${label}, profit hidden`;
-    return `<div class="mprow${r.k === cur ? ' cur' : ''}" role="listitem" data-k="${r.k}" data-mo="${esc(label)}" data-p="${r.v}" aria-label="${esc(aria)}">
-      <div class="mptop" aria-hidden="true"><span class="mpl">${esc(label)}</span><b class="fit mpv">${prof(r.v, 'dash:month')}</b></div>
-      <div class="mptrack" aria-hidden="true"><span class="mpneg"><i></i></span><span class="mppos"><i></i></span></div></div>`;
+  const mode = !on ? 'masked' : (hasPos ? 'pos' : 'flat');
+  const cols = rows.map(r => {
+    const pct = on && r.v > 0.004 && maxPos > 0 ? Math.min(100, r.v / maxPos * 100) : 0;
+    const loss = on && r.v < -0.004, curCls = r.k === cur ? ' cur' : '';
+    return `<button type="button" class="mpcol${curCls}${loss ? ' loss' : ''}" data-k="${r.k}" data-mo="${esc(r.lab)}" data-p="${r.v}" aria-label="${esc(monthAria(r.lab, Y.year, r.v, on))}" onclick="monthPick(this)" onpointerenter="monthHover(this, event)" onpointerleave="monthLeave()" onfocus="monthFocus(this)" onblur="monthBlur(this)"><i class="bu" style="height:${pct}%"></i><span class="mpl${curCls}" aria-hidden="true">${r.lab}<i class="ldot"></i></span></button>`;
   }).join('');
+  const axis = axisHTML(on, maxPos);
   return `<div class="stk mp" id="dMonths">${head}
-    <div class="wkhead"><span id="moRange">${esc(range)}</span><span class="wknav"><button type="button" id="moPrev" aria-label="Earlier months" onclick="monthNav(1)"${W.moreBefore ? '' : ' disabled'}>‹</button><button type="button" id="moNext" aria-label="Later months" onclick="monthNav(-1)"${W.moreAfter ? '' : ' disabled'}>›</button></span></div>
-    <div class="mplist${mixed ? ' mixed' : ''}${neg ? ' neg' : ''}" id="moList" role="list" aria-label="${on ? 'Monthly realized profit' : 'Monthly realized profit, hidden'}">${bars}</div></div>`;
+    <div class="yrrow"><span class="wknav"><button type="button" id="moPrev" aria-label="Earlier year" onclick="monthNav(-1)"${Y.moreBefore ? '' : ' disabled'}>‹</button></span><b id="moYear">${Y.year}</b><span class="wknav"><button type="button" id="moNext" aria-label="Later year" onclick="monthNav(1)"${Y.moreAfter ? '' : ' disabled'}>›</button></span></div>
+    <div class="mpframe"><div class="mpyaxis${hasPos ? '' : ' flat'}" id="yAxis" aria-hidden="true">${axis}</div>
+    <div class="mpmain"><div class="mpplot ${mode}" id="moList" role="group" aria-label="${on ? 'Monthly realized profit, ' + Y.year : 'Monthly realized profit, hidden'}" onkeydown="monthKey(event)"><div class="mpgrid" aria-hidden="true"><i></i><i></i></div><div class="mpzero" aria-hidden="true"></div><div class="mptip" id="moTip" hidden aria-live="polite"></div><div class="mpcols">${cols}</div></div></div></div></div>`;
+}
+function fitMonthLabs() {
+  document.querySelectorAll('#dMonths .mpl').forEach(el => {
+    el.style.fontSize = '';
+    let fs = parseFloat(getComputedStyle(el).fontSize), n = 0;
+    while (el.scrollWidth > el.clientWidth * 0.92 && fs > 7.5 && n++ < 24) { fs = Math.round((fs - 0.5) * 10) / 10; el.style.fontSize = fs + 'px'; }
+  });
+  document.querySelectorAll('#yAxis .yt').forEach(el => {
+    el.style.fontSize = '';
+    const avail = (el.parentElement && el.parentElement.clientWidth) || el.clientWidth;
+    let fs = parseFloat(getComputedStyle(el).fontSize), n = 0;
+    while (el.scrollWidth > avail + 0.5 && fs > 8 && n++ < 16) { fs = Math.round((fs - 0.5) * 10) / 10; el.style.fontSize = fs + 'px'; }
+  });
 }
 function applyMonthChart() {
   const box = $('#dMonths'); if (!box) return;
   const on = gShown('dash:month');
-  const rows = [...box.querySelectorAll('.mprow')];
-  let max = 0, hasPos = false, hasNeg = false;
-  rows.forEach(row => { const v = Number(row.dataset.p); if (!isFinite(v)) return; if (Math.abs(v) > max) max = Math.abs(v); if (v > 0.004) hasPos = true; if (v < -0.004) hasNeg = true; });
-  const list = box.querySelector('.mplist');
-  if (list) { list.classList.toggle('mixed', on && hasPos && hasNeg); list.classList.toggle('neg', on && hasNeg && !hasPos); list.setAttribute('aria-label', on ? 'Monthly realized profit' : 'Monthly realized profit, hidden'); }
-  rows.forEach(row => {
-    const v = Number(row.dataset.p), name = row.dataset.mo || '';
-    const neg = row.querySelector('.mpneg i'), pos = row.querySelector('.mppos i');
-    // A non-zero month keeps a short bar, so a small profit is not drawn the same as zero. The figure is the exact amount.
-    const pct = on && isFinite(v) && max > 0 && round2(v) !== 0 ? Math.max(4, Math.min(100, Math.abs(v) / max * 100)) + '%' : '0%';
-    if (neg) neg.style.width = on && v < 0 ? pct : '0%';
-    if (pos) pos.style.width = on && v > 0 ? pct : '0%';
-    row.setAttribute('aria-label', on && isFinite(v) ? name + ', ' + peso(v) : name + ', profit hidden');
+  if (!on) { moPin = ''; moHover = ''; }
+  const cols = [...box.querySelectorAll('.mpcol')];
+  if (!cols.length) { paintMonthTip(); return; }
+  let maxPos = 0, hasPos = false;
+  cols.forEach(col => { const v = Number(col.dataset.p); if (v > 0.004) { hasPos = true; if (v > maxPos) maxPos = v; } });
+  const mode = !on ? 'masked' : (hasPos ? 'pos' : 'flat');
+  const plot = box.querySelector('.mpplot'), year = ($('#moYear') || {}).textContent || '';
+  if (plot) { plot.classList.remove('pos', 'neg', 'mixed', 'flat', 'masked'); plot.classList.add(mode); plot.setAttribute('aria-label', on ? 'Monthly realized profit, ' + year : 'Monthly realized profit, hidden'); }
+  cols.forEach(col => {
+    const v = Number(col.dataset.p), name = col.dataset.mo || '';
+    const up = col.querySelector('.bu');
+    if (up) up.style.height = on && v > 0.004 && maxPos > 0 ? Math.min(100, v / maxPos * 100) + '%' : '0%';
+    col.classList.toggle('loss', on && v < -0.004);
+    col.classList.toggle('on', on && moPin === col.dataset.k);
+    col.setAttribute('aria-label', monthAria(name, year, v, on));
   });
+  const axis = box.querySelector('#yAxis');
+  if (axis) { axis.classList.toggle('flat', on && !hasPos); axis.innerHTML = axisHTML(on, maxPos); }
+  paintMonthTip();
+  fitMonthLabs();
+}
+function axisHTML(on, maxPos) {
+  if (!on) return '';
+  if (!(maxPos > 0.004)) return `<span class="yt zero" data-tick="0">${esc(axisAmt(0))}</span>`;
+  const mid = maxPos / 2, topL = axisAmt(maxPos), midL = axisAmt(mid), zL = axisAmt(0);
+  const showMid = midL !== topL && midL !== zL;
+  return `<span class="yt top" data-tick="${maxPos}">${esc(topL)}</span>${showMid ? `<span class="yt mid" data-tick="${mid}">${esc(midL)}</span>` : ''}<span class="yt zero" data-tick="0">${esc(zL)}</span>`;
+}
+function monthShown() { return gShown('dash:month'); }
+function monthHover(el, ev) {
+  if (!monthShown() || (ev && ev.pointerType && ev.pointerType !== 'mouse')) return;
+  moHover = el.dataset.k || '';
+  paintMonthTip();
+}
+function monthLeave() { moHover = ''; paintMonthTip(); }
+function monthPick(el) {
+  if (!monthShown()) { moPin = ''; moHover = ''; paintMonthTip(); return; }
+  const k = el.dataset.k || '';
+  if (moPin === k) { moPin = ''; moHover = ''; } else { moPin = k; moHover = ''; }
+  document.querySelectorAll('#dMonths .mpcol').forEach(c => c.classList.toggle('on', c.dataset.k === moPin));
+  paintMonthTip();
+}
+function monthFocus(el) {
+  if (!monthShown() || !el.matches(':focus-visible')) return;
+  moHover = el.dataset.k || '';
+  paintMonthTip();
+}
+function monthBlur(el) { if (moHover === (el.dataset.k || '')) moHover = ''; paintMonthTip(); }
+function monthKey(e) {
+  if (!monthShown()) return;
+  if (e.key === 'Escape') { moPin = ''; moHover = ''; paintMonthTip(); const a = document.activeElement; if (a && a.classList && a.classList.contains('mpcol')) a.blur(); return; }
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const cols = [...document.querySelectorAll('#dMonths .mpcol')], i = cols.indexOf(document.activeElement);
+  if (i < 0) return;
+  const n = cols[i + (e.key === 'ArrowRight' ? 1 : -1)];
+  if (!n) return;
+  e.preventDefault();
+  n.focus();
+}
+function paintMonthTip() {
+  const tip = $('#moTip'); if (!tip) return;
+  const on = monthShown(), k = on ? (moHover || moPin) : '';
+  const col = k ? document.querySelector('#dMonths .mpcol[data-k="' + k + '"]') : null;
+  if (moPin && !document.querySelector('#dMonths .mpcol[data-k="' + moPin + '"]')) moPin = '';
+  if (!on || !col) { tip.hidden = true; tip.textContent = ''; tip.classList.remove('loss'); return; }
+  const v = Number(col.dataset.p);
+  tip.hidden = false;
+  tip.textContent = (col.dataset.mo || '') + (v < -0.004 ? ' · loss · ' : ' · ') + peso(v);
+  tip.classList.toggle('loss', v < -0.004);
 }
 function monthNav(d) {
-  const w = profitMonthWindow(profitMonthMap());
-  if (d > 0 && !w.moreBefore) return;
-  if (d < 0 && !w.moreAfter) return;
-  dashMo += d;
+  const map = profitMonthMap(); if (!map) return;
+  const Y = activeYear(map), ys = Y.years, i = ys.indexOf(Y.year) + d;
+  if (i < 0 || i >= ys.length) return;
+  dashYear = ys[i]; moPin = ''; moHover = '';
   const el = $('#dMonths'); if (el) el.outerHTML = monthChartHTML();
   applyEye();
 }
