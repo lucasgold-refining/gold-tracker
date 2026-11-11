@@ -505,7 +505,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -1037,7 +1037,8 @@ function bindQuote() {
     if (p === null || isNaN(p)) { toast('Enter a purity like 87.1 or 0.871'); el.focus(); selectAll(el); return; }
     quoteToBuy(p);
   });
-  $('#qadd').onclick = bqAdd;
+  // Single mode: the button adds the purity to the batch list, then empties the box for the next one (v45).
+  $('#qadd').onclick = () => { if (!bqAdd() || QMODE === 'batch') return; el.value = ''; upd(); if (!touchUI()) el.focus(); };
   upd();
 }
 function bqAdd() {
