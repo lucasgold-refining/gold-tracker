@@ -513,7 +513,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 48;
+const APP_VERSION = 49;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -715,18 +715,26 @@ async function api(action, data, isPost, opt) {
   let j; try { j = await r.json(); } catch (e) { if (e.name === 'AbortError' || e.name === 'TypeError') throw netError(true, false); throw new Error('The sheet answered with something unexpected (HTTP ' + r.status + '). Check the web app URL in Settings.'); }
   netDown = false;
   if (!j.ok) { const err = new Error(j.error || 'Something went wrong.'); err.auth = j.auth === false; throw err; }
-  noteCaps(j);
+  const willStore = !!(j.state || (j.settings && ST));
+  noteCaps(j, { skipSave: willStore });
   if (j.state) setState(j.state);
   else if (j.settings && ST) applySettings(j);
   return j;
 }
-function noteCaps(j) {
+// Trust the server's version and receipts, including a rollback (v15 → v13).
+function applyServerCaps(target, j) {
+  if (!target || !j) return;
+  const ver = j.version != null ? Number(j.version) : (j.state && j.state.version != null ? Number(j.state.version) : null);
+  if (ver > 0) target.version = ver;
+  if (Object.prototype.hasOwnProperty.call(j, 'receipts')) target.receipts = !!j.receipts;
+  else if (j.state && Object.prototype.hasOwnProperty.call(j.state, 'receipts')) target.receipts = !!j.state.receipts;
+  else if (ver > 0) target.receipts = ver >= 14;
+}
+function noteCaps(j, opt) {
   if (!j) return;
   if (ST) {
-    if (j.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.version) || 0);
-    if (j.state && j.state.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.state.version) || 0);
-    if (j.receipts || (j.state && j.state.receipts)) ST.receipts = true;
-    if (j.version || j.receipts || j.state) save(CACHE_KEY, ST);
+    applyServerCaps(ST, j);
+    if (!(opt && opt.skipSave) && (j.version != null || Object.prototype.hasOwnProperty.call(j, 'receipts') || j.state)) save(CACHE_KEY, ST);
   } else if (j.state) { /* setState will run next */ }
 }
 
@@ -741,8 +749,7 @@ function applySettings(j) {
   if (j.settings) ST.settings = Object.assign({}, ST.settings || {}, j.settings);
   if (j.today) ST.today = j.today;
   if (j.serverTime) ST.serverTime = j.serverTime;
-  if (j.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.version));
-  if (j.receipts) ST.receipts = true;
+  applyServerCaps(ST, j);
   ST._baseSyncedAt = new Date().toISOString();
   save(CACHE_KEY, ST);
 }
@@ -878,13 +885,15 @@ async function askPersist() {
   catch (e) { persistResult = false; }
   return persistResult;
 }
-async function persistOutbox() {
+async function persistOutbox(opt) {
   const pack = obPack();
   try {
     await obPut(pack);
-    const back = await obGet();
-    const a = (back && back.items || []).map(x => x.rid).join('\n'), b = pack.items.map(x => x.rid).join('\n');
-    if (a !== b) throw new Error('idb verify failed');
+    if (!(opt && opt.skipVerify)) {
+      const back = await obGet();
+      const a = (back && back.items || []).map(x => x.rid).join('\n'), b = pack.items.map(x => x.rid).join('\n');
+      if (a !== b) throw new Error('idb verify failed');
+    }
     obFallback = '';
     return true;
   } catch (e) {
@@ -966,8 +975,8 @@ async function initOutbox() {
 const loadQ = () => Q;
 async function saveQ() { return persistOutbox(); }
 const pendingQ = () => Q.filter(x => !x.error && !x.hold);
-async function qUpdate(r, fn) {
-  const it = Q.find(x => x.rid === r); if (it) { fn(it); const ok = await persistOutbox(); if (!ok) return null; } return it;
+async function qUpdate(r, fn, opt) {
+  const it = Q.find(x => x.rid === r); if (it) { fn(it); const ok = await persistOutbox(opt); if (!ok) return null; } return it;
 }
 async function qRemove(r) { Q = Q.filter(x => x.rid !== r); await persistOutbox(); }
 async function enqueue(it) {
@@ -1001,6 +1010,19 @@ function resolveNos(it) {
   (it.waitRids || []).forEach(r => { if (syncedNo[r] > 0) nos.push(Number(syncedNo[r])); });
   const seen = {};
   return nos.filter(n => (seen[n] ? false : (seen[n] = true))).sort((a, b) => a - b);
+}
+// Persist a just-synced purchase No. onto every waiting dependent (refine, addToBatch)
+// so a reload or export still has a complete expectSheetNos.
+function rememberSyncedNo(waitRid, no) {
+  no = Number(no);
+  if (!(no > 0) || !waitRid) return;
+  syncedNo[waitRid] = no;
+  Q.forEach(x => {
+    if (!(x.waitRids || []).includes(waitRid)) return;
+    const nos = (x.expectSheetNos || x.nos || []).map(Number).filter(n => n > 0);
+    if (!nos.includes(no)) nos.push(no);
+    x.expectSheetNos = nos.sort((a, b) => a - b);
+  });
 }
 function localDefaultBatchId() {
   const day = (todayISO() || '').replace(/-/g, '');
@@ -1047,7 +1069,7 @@ async function syncQueue(opt) {
         const sold = b && (b.status === 'Sold' || b.recorded);
         if (sold) { await qUpdate(r0, x => { x.hold = `Batch ${it.batchId} already has a sale on the sheet. Check Refining, then delete this or tap Send anyway to correct it.`; }); continue; }
       }
-      await qUpdate(r0, x => { x.tries = (x.tries || 0) + 1; x.lastTry = Date.now(); });
+      await qUpdate(r0, x => { x.tries = (x.tries || 0) + 1; x.lastTry = Date.now(); }, { skipVerify: true });
       inflight = r0; softRender();
       try {
         let j = null, kind = qKindLabel(it);
@@ -1055,7 +1077,7 @@ async function syncQueue(opt) {
           j = await api('addPurchase', { date: it.date, weightBhy: it.weightBhy, purity: it.purity, cost: it.cost, at: it.createdAt, qid: it.qid, lite: true }, true, { rid: it.rid, timeout: 45000 });
           if (j.state) gotState = true; applyAdded(j, it);
           const no = j.no || (j.item && j.item.no);
-          if (no > 0) syncedNo[r0] = Number(no);
+          if (no > 0) rememberSyncedNo(r0, no);
           lastNo = j.bno || (j.item && j.item.bno) || no || null;
         } else if (isSale(it)) {
           j = await api('recordBatchSale', { batchId: it.batchId, sellDate: it.sellDate, sellBase: it.sellBase, actualAmt: it.actualAmt }, true, { rid: it.rid, timeout: 45000 });
@@ -1126,11 +1148,8 @@ function qKindLabel(it) {
   if (isRefine(it)) return 'refine';
   return 'purchase';
 }
-function qDel(r) {
-  const it = Q.find(x => x.rid === r); if (!it) return;
-  if (inflight === r) return toast('Sending this one now. Try again in a moment.');
-  const kind = qKindLabel(it);
-  const line = isPur(it) ? `${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)} · ${fmtDate(it.date)}`
+function qLine(it) {
+  return isPur(it) ? `${wt(it.weightBhy)} BHY · ${pct(it.purity)} · cost ${peso(it.cost)} · ${fmtDate(it.date)}`
     : isSale(it) ? `Batch ${it.batchId} · ${fmtDate(it.sellDate)}`
     : isOtherSale(it) ? `Other sale · ${fmtDate(it.date)} · received ${peso(it.actual)}`
     : isEdit(it) ? `Edit #${it.no} · ${wt(it.weightBhy)} BHY`
@@ -1139,21 +1158,40 @@ function qDel(r) {
     : isRemove(it) ? `Take #${it.no} out of ${it.batchId}`
     : isRefine(it) ? `Refine ${it.batchId || 'new batch'}`
     : `Estimate for ${it.batchId}`;
-  const un = it.uncertainAt ? ' (or may have, check the sheet)' : '';
-  if (it.uncertainAt) { if (!confirm(`Delete this unsynced ${kind}?\n${line}\n\nIt has not reached the sheet${un}.`)) return; }
-  else { if (!confirm(`Delete this unsynced ${kind}?\n${line}\n\nIt has not reached the sheet.`)) return; }
+}
+// Uncertain items may already be on the sheet. The user must check Stock first.
+// "It's on the sheet" only drops the waiting item (never mints a new rid).
+// "It's not on the sheet" continues with the SAME rid.
+function qCheckStock(it, kind, nextNotOnSheet) {
+  modal(`<h2>Check Stock first</h2>
+    <p>This unsynced ${esc(kind)} may already be on the sheet (the sheet didn't confirm).</p>
+    <p>${esc(qLine(it))}</p>
+    <p class="muted">Open Stock (or Refining / Sales) and look for it. If you can see it, only drop this waiting item — do not type it again. If you cannot see it, you can continue with the same request.</p>
+    <button class="btn" id="qOpenStock">Open Stock</button>
+    <button class="btn light" id="qOnSheet">It's on the sheet — drop this waiting item</button>
+    <button class="btn light" id="qNotSheet">It's not on the sheet — continue</button>
+    <button class="btn light" onclick="closeModal()">Cancel</button>`);
+  $('#qOpenStock').onclick = () => { closeModal(); go('stock'); };
+  $('#qOnSheet').onclick = () => { closeModal(); qRemove(it.rid).then(() => { render(); toast('Dropped. It should already be on the sheet — do not type it again.'); }); };
+  $('#qNotSheet').onclick = () => { closeModal(); nextNotOnSheet(); };
+}
+function qDel(r) {
+  const it = Q.find(x => x.rid === r); if (!it) return;
+  if (inflight === r) return toast('Sending this one now. Try again in a moment.');
+  const kind = qKindLabel(it);
+  if (it.uncertainAt) {
+    return qCheckStock(it, kind, () => {
+      if (!confirm(`Delete this unsynced ${kind}?\n${qLine(it)}\n\nYou checked Stock and did not see it. If you type it again and it was actually saved, it will be on the sheet twice.`)) return;
+      qRemove(r).then(() => { render(); toast('Deleted'); });
+    });
+  }
+  if (!confirm(`Delete this unsynced ${kind}?\n${qLine(it)}\n\nIt has not reached the sheet.`)) return;
   qRemove(r).then(() => { render(); toast('Deleted'); });
 }
 function qRetry(r, force) { qUpdate(r, x => { x.error = ''; x.hold = ''; if (force) x.force = true; }).then(() => { render(); syncQueue(); }); }
-function qEdit(r) {
-  const it = Q.find(x => x.rid === r); if (!it) return;
-  if (inflight === r) return toast('Sending this one now. Try again in a moment.');
-  if (isSale(it)) return openSale(it.batchId, it);
-  if (isEst(it)) { go('sales'); toast('Edit the estimate on the batch, then it will sync.'); return; }
-  if (isOtherSale(it)) return openOtherSale(it);
-  if (isEdit(it)) return editItem(it.no, it);
-  if (isDel(it) || isAddTo(it) || isRemove(it) || isRefine(it)) return toast('Delete this waiting item to change it, then do it again.');
-  modal(`<h2>Edit unsynced purchase</h2>${it.error ? `<div class="banner err">${esc(it.error)}</div>` : ''}
+function qEditForm(it) {
+  const r = it.rid;
+  modal(`<h2>Edit unsynced purchase</h2>${it.error ? `<div class="banner err">${esc(it.error)}</div>` : ''}${it.uncertainAt ? `<div class="banner">If this was already saved, the sheet keeps the original figures. This does not create a second purchase.</div>` : ''}
     <div class="row2"><div><label for="qw">Weight (BHY)</label><input id="qw" type="text" inputmode="decimal" value="${esc(it.weightBhy)}"></div>
     <div><label for="qpp">Purity %</label><input id="qpp" class="pur" type="text" inputmode="decimal" placeholder="%" value="${esc(+(it.purity * 100).toFixed(4))}"></div></div>
     <label for="qc">Cost (₱)</label><input id="qc" type="text" inputmode="decimal" value="${esc(it.cost)}">
@@ -1166,6 +1204,19 @@ function qEdit(r) {
     await qUpdate(r, x => { x.weightBhy = w; x.purity = p; x.cost = c; x.date = d; x.error = ''; x.hold = ''; });
     closeModal(); render(); toast(navigator.onLine ? 'Saved. Syncing…' : 'Saved offline. Will sync when back online'); syncQueue();
   };
+}
+function qEdit(r) {
+  const it = Q.find(x => x.rid === r); if (!it) return;
+  if (inflight === r) return toast('Sending this one now. Try again in a moment.');
+  if (isSale(it)) return openSale(it.batchId, it);
+  if (isEst(it)) { go('sales'); toast('Edit the estimate on the batch, then it will sync.'); return; }
+  if (isOtherSale(it)) return openOtherSale(it);
+  if (isEdit(it)) return editItem(it.no, it);
+  if (isDel(it) || isAddTo(it) || isRemove(it) || isRefine(it)) return toast('Delete this waiting item to change it, then do it again.');
+  if (it.uncertainAt) {
+    return qCheckStock(it, 'purchase', () => qEditForm(it));
+  }
+  qEditForm(it);
 }
 function pendingSaleVal(it, b) {
   const amt = parseNum(it.actualAmt), base = parseNum(it.sellBase), g = b ? (Number(b.refinedG) || 0) : 0;
@@ -1683,14 +1734,20 @@ function savePurchase() {
   savePurchaseGo({ date: d, weightBhy: w, purity: p, cost: c });
 }
 async function savePurchaseGo(it) {
-  const ok = await enqueue({ action: 'addPurchase', rid: rid(), date: it.date, weightBhy: it.weightBhy, purity: it.purity, cost: it.cost, createdAt: new Date().toISOString(), tries: 0 });
-  if (!ok) return;
-  forgetQuote();   // next customer starts fresh
-  buyDraft = { date: it.date === todayISO() ? '' : it.date, weightBhy: '', purity: '', cost: '' }; render();   // today = follow the clock
-  const el = $('#bw'); if (el) el.focus();
-  if (!navigator.onLine) return toast('Saved offline. Will sync when back online', 3500);
-  toast(netDown ? 'Saved on this device. Will sync when the sheet answers' : 'Saved ✓, syncing…', 2600);
-  setTimeout(() => syncQueue(), 0);   // after this paint
+  const btn = $('#bsave');
+  if (btn) { btn.disabled = true; btn._t = btn.innerHTML; btn.textContent = 'Saving…'; }
+  try {
+    const ok = await enqueue({ action: 'addPurchase', rid: rid(), date: it.date, weightBhy: it.weightBhy, purity: it.purity, cost: it.cost, createdAt: new Date().toISOString(), tries: 0 });
+    if (!ok) return;
+    forgetQuote();   // next customer starts fresh
+    buyDraft = { date: it.date === todayISO() ? '' : it.date, weightBhy: '', purity: '', cost: '' }; render();   // today = follow the clock
+    const el = $('#bw'); if (el) el.focus();
+    if (!navigator.onLine) return toast('Saved offline. Will sync when back online', 3500);
+    toast(netDown ? 'Saved on this device. Will sync when the sheet answers' : 'Saved ✓, syncing…', 2600);
+    setTimeout(() => syncQueue(), 0);   // after this paint
+  } finally {
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = btn._t; }
+  }
 }
 
 // ---------- Batch purchases (v14) ----------
@@ -1808,8 +1865,9 @@ function bindBB() {
   $('#bbSaveAll').onclick = saveAll;
   bbTotals();
 }
-let lastBB = 0;
+let lastBB = 0, lastBBKey = '', savingAll = false;
 function saveAll() {
+  if (savingAll) return;
   const d = ($('#bbd') && $('#bbd').value) || BB.date || todayISO(), out = []; let firstBad = null;
   BB.rows.forEach((r, i) => {
     r.err = '';
@@ -1828,9 +1886,18 @@ function saveAll() {
     bbFocus(0, 'w'); return toast('Nothing to save. Type a weight and cost first.'); }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('Pick the date');
   if (!connected()) return openSettings();
+  const key = d + '|' + out.map(x => [x.w, x.p, x.c].join('|')).join(';');
+  if (key === lastBBKey && Date.now() - lastBB < 1500) return;
   lastBB = Date.now();
+  lastBBKey = key;
+  savingAll = true;
+  const btn = $('#bbSaveAll');
+  if (btn) { btn.disabled = true; btn._t = btn.innerHTML; btn.textContent = 'Saving…'; }
   const at = new Date().toISOString(), qid = out.length > 1 ? 'b' + rid() : undefined;   // v33: rows saved together share a batch ID (boxed in Stock)
-  saveAllGo(out, d, at, qid);
+  Promise.resolve(saveAllGo(out, d, at, qid)).finally(() => {
+    savingAll = false;
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = btn._t; }
+  });
 }
 async function saveAllGo(out, d, at, qid) {
   const added = [];
@@ -3152,7 +3219,7 @@ window.addEventListener('hashchange', () => { if (/^#setup=/.test(location.hash)
 // Pull-to-refresh and writes still run a full getState. Against Api.gs v12, fall back to a
 // full getState, but only every 10 minutes (was 60 seconds).
 const STALE_MS = 10 * 60 * 1000;
-let lastLightSync = 0;
+let lastLightSync = 0, lightInflight = false;
 const staleRefresh = () => {
   if (!connected() || !lastSync) return;
   const age = Date.now() - new Date(lastSync).getTime();
@@ -3161,13 +3228,16 @@ const staleRefresh = () => {
   lightOrFullRefresh();
 };
 async function lightOrFullRefresh() {
-  if (!connected() || busy) return;
-  const ver = Number(ST && ST.version) || 0;
-  if (ver >= 13) {
-    try { await api('getSettings'); lastLightSync = Date.now(); softRender(); return; }
-    catch (e) { if (!(e && /Unknown action/.test(e.message))) return; }
-  }
-  refresh(true);
+  if (!connected() || busy || lightInflight) return;
+  lightInflight = true;
+  try {
+    const ver = Number(ST && ST.version) || 0;
+    if (ver >= 13) {
+      try { await api('getSettings'); lastLightSync = Date.now(); softRender(); return; }
+      catch (e) { if (!(e && /Unknown action/.test(e.message))) return; }
+    }
+    await refresh(true);
+  } finally { lightInflight = false; }
 }
 window.addEventListener('focus', staleRefresh);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') staleRefresh(); });
