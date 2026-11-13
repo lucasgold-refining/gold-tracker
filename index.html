@@ -505,7 +505,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -697,13 +697,10 @@ async function api(action, data, isPost, opt) {
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), opt.timeout || 45000);
   let r;
   try {
-    if (isPost) {
-      r = await fetch(CFG.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action, token: CFG.token, rid: opt.rid || rid() }, data || {})), redirect: 'follow', signal: ctl.signal });
-    } else {
-      const q = new URLSearchParams(Object.assign({ action, token: CFG.token, t: Date.now() }, data || {}));
-      r = await fetch(CFG.url + (CFG.url.includes('?') ? '&' : '?') + q, { redirect: 'follow', cache: 'no-store', signal: ctl.signal });
-    }
+    // v46: every request is POST with the token in the body (never in the URL).
+    // Api.gs v12 already accepts POST reads, so this works before v13 is deployed.
+    r = await fetch(CFG.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action, token: CFG.token, rid: opt.rid || rid() }, data || {})), redirect: 'follow', signal: ctl.signal });
   } catch (e) { throw netError(true, e.name === 'AbortError'); }
   finally { clearTimeout(tm); }
   if (r.status >= 500 || r.status === 408 || r.status === 429) throw netError(true, false);
@@ -711,7 +708,23 @@ async function api(action, data, isPost, opt) {
   netDown = false;
   if (!j.ok) { const err = new Error(j.error || 'Something went wrong.'); err.auth = j.auth === false; throw err; }
   if (j.state) setState(j.state);
+  else if (j.settings && ST) applySettings(j);
   return j;
+}
+// v46: merge a getSettings answer into the existing state (do not wipe stock / batches).
+function applySettings(j) {
+  if (!ST) return;
+  if (j.base != null) ST.base = j.base;
+  if (j.source != null) ST.source = j.source;
+  if (j.priceDate != null) ST.priceDate = j.priceDate;
+  if (j.lastUpdated != null) ST.lastUpdated = j.lastUpdated;
+  if (j.updateStatus != null) ST.updateStatus = j.updateStatus;
+  if (j.settings) ST.settings = Object.assign({}, ST.settings || {}, j.settings);
+  if (j.today) ST.today = j.today;
+  if (j.serverTime) ST.serverTime = j.serverTime;
+  if (j.version) ST.version = Math.max(Number(ST.version) || 0, Number(j.version));
+  ST._baseSyncedAt = new Date().toISOString();
+  save(CACHE_KEY, ST);
 }
 // A network failure (offline, no answer, timeout). sent = the request may have reached the sheet.
 function netError(sent, timeout) {
@@ -2076,10 +2089,26 @@ function batchCost(b, fc) {
   return cif || 0;                                                                     // first sight
 }
 let fcBusy = false; const fcTried = new Set();
-async function fcCheck() {   // after a Dashboard draw: read the items of open batches that are new or changed (one at a time)
+async function fcCheck() {   // after a Dashboard draw: lock each open batch's fee (once) from items + cost incl. fee
   if (fcBusy || !ST || !(Number(ST.version) >= 10) || !connected() || isOffline()) return;
   const fc = load(FC_KEY) || {}, key = b => b.id + '|' + fcSig(b) + '|' + fcCif(b) + '|' + (b.at || '');
-  const todo = (ST.batches || []).filter(b => { const k = fcStale(fc[b.id], b) ? null : fc[b.id]; return b.status === 'Refining' && !(k && k.sig === fcSig(b) && k.cif === fcCif(b)) && !fcTried.has(key(b)); });
+  const open = (ST.batches || []).filter(b => b.status === 'Refining');
+  // v13: itemsCost and fee already arrived with getState, so no batchItems round-trip.
+  if (Number(ST.version) >= 13 && open.every(b => hasNum(b.itemsCost))) {
+    let changed = false;
+    open.forEach(b => {
+      const k0 = fcStale(fc[b.id], b) ? null : fc[b.id];
+      const cost = round2(Number(b.itemsCost)), cif = fcCif(b);
+      const fee = k0 && hasNum(k0.fee) ? Number(k0.fee) : (hasNum(b.fee) ? Number(b.fee) : (cif != null && cif - cost > 0.005 ? round2(cif - cost) : feeSet()));
+      const before = batchCost(b, fc);
+      fc[b.id] = { sig: fcSig(b), cif, cost, fee, at: b.at || (k0 && k0.at) || undefined };
+      if (Math.abs(batchCost(b, fc) - before) > 0.004) changed = true;
+    });
+    save(FC_KEY, fc);
+    if (changed && view === 'dash' && !$('#modal')) render();
+    return;
+  }
+  const todo = open.filter(b => { const k = fcStale(fc[b.id], b) ? null : fc[b.id]; return !(k && k.sig === fcSig(b) && k.cif === fcCif(b)) && !fcTried.has(key(b)); });
   if (!todo.length) return;
   fcBusy = true; let changed = false;
   try {
@@ -2601,7 +2630,27 @@ async function setupFromHash() {
   render(); return true;
 }
 window.addEventListener('hashchange', () => { if (/^#setup=/.test(location.hash)) setupFromHash(); else { const v = hashView(); if (v) go(v); } });
-const staleRefresh = () => { if (connected() && lastSync && Date.now() - new Date(lastSync).getTime() > 60000) refresh(true); };
+// v46: after 10 minutes away, refresh the base/settings only (getSettings, Api.gs v13).
+// Pull-to-refresh and writes still run a full getState. Against Api.gs v12, fall back to a
+// full getState, but only every 10 minutes (was 60 seconds).
+const STALE_MS = 10 * 60 * 1000;
+let lastLightSync = 0;
+const staleRefresh = () => {
+  if (!connected() || !lastSync) return;
+  const age = Date.now() - new Date(lastSync).getTime();
+  const lightAge = lastLightSync ? Date.now() - lastLightSync : age;
+  if (age <= STALE_MS || lightAge <= STALE_MS) return;
+  lightOrFullRefresh();
+};
+async function lightOrFullRefresh() {
+  if (!connected() || busy) return;
+  const ver = Number(ST && ST.version) || 0;
+  if (ver >= 13) {
+    try { await api('getSettings'); lastLightSync = Date.now(); softRender(); return; }
+    catch (e) { if (!(e && /Unknown action/.test(e.message))) return; }
+  }
+  refresh(true);
+}
 window.addEventListener('focus', staleRefresh);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') staleRefresh(); });
 window.addEventListener('online', () => { netDown = false; softRender(); if (connected()) refresh(true); });   // refresh syncs the queue first
