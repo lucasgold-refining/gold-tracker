@@ -822,6 +822,7 @@ function batchRefining() {
     var regRow = firstEmptyRow_(ref, REFINING.firstDataRow, range_(REFINING.regFirstCol, REFINING.regCols));
     ensureRows_(ref, regRow);
     ref.getRange(regRow, REFINING.regFirstCol, 1, REFINING.regCols).setValues([[batchId, batchDate, base]]);
+    if (typeof goldApiClearNoFee_ === 'function') goldApiClearNoFee_(ref, regRow);   // v56: menu refine is not a 99.8% group
 
     // 3) Status -> Refined on Purchases
     var statusRange = pur.getRange(PURCHASES.firstDataRow, c.status, n, 1);
@@ -1837,6 +1838,12 @@ function trimSoldSnapshot_(ref) {
   var items = ref.getRange(first, 1, n, 7).getValues();
   var regW = Math.min(width, 31) - R.id + 1;
   var reg = ref.getRange(first, R.id, n, regW).getValues();
+  var noFeeAt = [];
+  if (ref.getMaxColumns() >= 39) {
+    ref.getRange(first, 39, n, 1).getValues().forEach(function (v, idx) {
+      noFeeAt[idx] = v[0] === 1 || v[0] === '1' || v[0] === true;
+    });
+  }
   var i, id, row, rec;
   for (i = 0; i < reg.length; i++) {
     id = reg[i][0];
@@ -1857,7 +1864,9 @@ function trimSoldSnapshot_(ref) {
       recorded: reg[i][R.recorded - R.id]
     };
     rec.sold = trimSoldIsSold_(rec.sellDate, rec.sellBase, rec.actualAmt);
-    rec.itemsCost = round2_(rec.costInclFee - fee);
+    // v56: a marked batch's register cost is already the item costs (no fee was added). Do not subtract the fee again.
+    rec.noFee = !!noFeeAt[i];
+    rec.itemsCost = rec.noFee ? round2_(rec.costInclFee) : round2_(rec.costInclFee - fee);
     out.batches.push(rec);
     if (rec.sold) out.soldIds.push(rec.id); else out.unsoldIds.push(rec.id);
     out.itemsByBatch[rec.id] = [];

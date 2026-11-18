@@ -62,6 +62,42 @@ const batch = (be, id) => be.post({ action: 'getState' }).state.batches.find(b =
     ok(near(batch(be, 'R-OLD').costInclFee, 20000) && batch(be, 'R-OLD').fee === 0, 'adding an item does not bring the fee back (' + batch(be, 'R-OLD').costInclFee + ')');
   }
 
+  // Undo of a 99.8% group clears the no-fee mark, so the next normal refine keeps its fee.
+  {
+    const be = makeBackend();
+    be.add({ weightBhy: 2, purity: 0.998, cost: 8000 });
+    be.add({ weightBhy: 2, purity: 0.85, cost: 4000 });
+    ok(be.post({ action: 'batchRefine', rid: 'ug', batchId: 'G-UNDO', pickNos: [1], noFee: true }).ok, 'undo setup: group');
+    const row = be.env.sheets.Refining.d.findIndex(r => r[12] === 'G-UNDO');
+    ok(row > 0 && (be.env.sheets.Refining.d[row][38] === 1 || be.env.sheets.Refining.d[row][38] === '1'), 'undo setup: the register row is marked');
+    const u = be.post({ action: 'undoLastBatch', rid: 'uu', batchId: 'G-UNDO', items: 1 });
+    ok(u.ok, 'undo of the group (' + (u.message || u.error) + ')');
+    ok(be.env.sheets.Refining.d[row][38] === '' || be.env.sheets.Refining.d[row][38] == null, 'undo cleared the no-fee mark');
+    be.env.sheets.Refining.d[row][38] = 1;   // a mark left behind, as the old undo did
+    const nrm = be.post({ action: 'batchRefine', rid: 'un', batchId: 'R-NEXT', pickNos: [2] });
+    ok(nrm.ok, 'normal refine after the undo (' + (nrm.message || nrm.error) + ')');
+    const nb = batch(be, 'R-NEXT');
+    ok(nb && nb.noFee !== true && near(nb.costInclFee, 24000) && near(nb.fee, 20000), 'the next normal batch keeps its fee (' + (nb && nb.costInclFee) + ')');
+    const used = be.env.sheets.Refining.d.find(r => r[12] === 'R-NEXT');
+    ok(used && (used[38] === '' || used[38] == null), 'the normal refine cleared the mark on the row it used');
+  }
+
+  // Trim freezes a marked batch's item cost without subtracting a fee that was never added.
+  {
+    const be = makeBackend();
+    be.add({ weightBhy: 2, purity: 0.998, cost: 8000 });
+    be.add({ weightBhy: 2, purity: 0.85, cost: 4000 });
+    ok(be.post({ action: 'batchRefine', rid: 'tg', batchId: 'G-TRIM', pickNos: [1], noFee: true }).ok, 'trim setup: marked batch');
+    ok(be.post({ action: 'batchRefine', rid: 'tn', batchId: 'R-TRIM', pickNos: [2] }).ok, 'trim setup: normal batch');
+    ok(be.post({ action: 'sellBatches', rid: 'ts1', batchIds: ['G-TRIM'], sellDate: '2026-11-18', sellBase: 8250 }).ok, 'trim setup: sell the marked batch');
+    ok(be.post({ action: 'sellBatches', rid: 'ts2', batchIds: ['R-TRIM'], sellDate: '2026-11-18', sellBase: 8250 }).ok, 'trim setup: sell the normal batch');
+    const snap = be.ctx.trimSoldSnapshot_(be.env.sheets.Refining);
+    const marked = snap.batches.filter(b => b.id === 'G-TRIM')[0];
+    const plain = snap.batches.filter(b => b.id === 'R-TRIM')[0];
+    ok(marked && marked.noFee === true && near(marked.costInclFee, 8000) && near(marked.itemsCost, 8000), 'marked batch freezes item cost 8,000, not 8,000 minus the fee (' + (marked && marked.itemsCost) + ')');
+    ok(plain && plain.noFee !== true && near(plain.costInclFee, 24000) && near(plain.itemsCost, 4000), 'a normal sold batch still freezes item cost as cost minus the fee (' + (plain && plain.itemsCost) + ')');
+  }
+
   const holder = {}; const srv = await serve(ROOT, holder);
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const be = makeBackend(); holder.cur = be;

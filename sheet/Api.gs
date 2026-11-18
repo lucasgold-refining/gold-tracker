@@ -1168,6 +1168,11 @@ function goldApiMarkNoFee_(ref, row) {
   goldApiEnsureNoFeeFormula_(ref);
   ref.getRange(row, NO_FEE_COL).setValue(1);
 }
+/** A reused register row must not keep a previous batch's no-fee mark. */
+function goldApiClearNoFee_(ref, row) {
+  if (!ref || !row || ref.getMaxColumns() < NO_FEE_COL) return;
+  ref.getRange(row, NO_FEE_COL).setValue('');
+}
 function goldApiBatchItemsOf_(ref, id) {
   var out = [], last = ref.getLastRow();
   if (last < REFINING.firstDataRow) return out;
@@ -1289,7 +1294,9 @@ function goldApiBatchRefine_(req) {
       ensureRows_(ref, regRow);
       regRange = ref.getRange(regRow, REFINING.regFirstCol, 1, REFINING.regCols);
       regRange.setValues([[batchId, batchDate, base]]); wroteReg = true;
+      // A normal refine must not inherit a no-fee mark left on this row. Group 99.8% sets it.
       if (wantNoFee) { goldApiMarkNoFee_(ref, regRow); markedRow = regRow; }
+      else goldApiClearNoFee_(ref, regRow);
       // 3) Status -> Refined
       var statuses = statusBefore.map(function (x) { return [x[0]]; });
       s.picked.forEach(function (p) { statuses[p.idx][0] = 'Refined'; });
@@ -1855,6 +1862,7 @@ function goldApiUndoLastBatch_(req) {
       ref.getRange(rr, R.id, 1, REFINING.regCols).clearContent();
       ref.getRange(rr, R.sellDate, 1, 3).clearContent();
       if (ref.getMaxColumns() >= BATCH_EST.actualG) ref.getRange(rr, BATCH_EST.estBase, 1, 2).clearContent();
+      goldApiClearNoFee_(ref, rr);   // v56: the next batch on this row must not inherit a no-fee mark
       ref.getRange(REFINING.selectorCell).clearContent();
       SpreadsheetApp.flush();
     } catch (err) {
