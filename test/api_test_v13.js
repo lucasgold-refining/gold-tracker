@@ -27,18 +27,18 @@ function resetCalls(env) {
 {
   const B = boot(), { post, get, env, ctx } = B;
   const ping = post({ action: 'ping' });
-  ok(ping.ok && ping.version === 54 && ping.receipts === true, 'ping version 50 with receipts (got ' + ping.version + ', receipts=' + ping.receipts + ')');
+  ok(ping.ok && ping.version === 55 && ping.receipts === true, 'ping version 50 with receipts (got ' + ping.version + ', receipts=' + ping.receipts + ')');
 
   resetCalls(env);
   const lite = post({ action: 'getSettings' });
-  ok(lite.ok && lite.version === 54 && lite.receipts === true && lite.base === 8250 && lite.settings && lite.settings.refiningFee === 20000, 'getSettings returns base + settings + receipts');
+  ok(lite.ok && lite.version === 55 && lite.receipts === true && lite.base === 8250 && lite.settings && lite.settings.refiningFee === 20000, 'getSettings returns base + settings + receipts');
   ok(!lite.state && !lite.stock && !lite.batches, 'getSettings does not return full state');
   ok(!(env.calls.bySheet.Purchases) && !(env.calls.bySheet.Archive) && !(env.calls.bySheet.Dashboard) && !(env.calls.bySheet.Sales),
      'getSettings does not read Purchases / Archive / Dashboard / Sales (reads: ' + JSON.stringify(env.calls.bySheet) + ')');
 
   resetCalls(env);
   const st = post({ action: 'getState' }).state;
-  ok(st && st.version === 54 && st.receipts === true, 'POST getState returns version 50 with receipts');
+  ok(st && st.version === 55 && st.receipts === true, 'POST getState returns version 50 with receipts');
   ok(!(env.calls.bySheet.Dashboard), 'getState does not read the Dashboard tab (bySheet=' + JSON.stringify(env.calls.bySheet) + ')');
   ok(st.dashboard && close(st.dashboard.cashUsed, (st.stock || []).reduce((t, x) => t + (x.cost || 0), 0) + 403 * 3600, 0.05),
      'cashUsed is summed from rows (stock + the 403 mock Archive items), not from Dashboard cells: ' + (st.dashboard && st.dashboard.cashUsed));
@@ -64,7 +64,7 @@ function resetCalls(env) {
   const viaGet = get({ action: 'getState' });
   ok(viaGet.ok === false && viaGet.auth === false && !viaGet.state, 'GET ?token= is refused (v53). The token is not read from the URL.');
   const viaPost = post({ action: 'getState' });
-  ok(viaPost.ok && viaPost.state && viaPost.state.version === 54 && viaPost.state.receipts === true, 'POST getState still works for the phone');
+  ok(viaPost.ok && viaPost.state && viaPost.state.version === 55 && viaPost.state.receipts === true, 'POST getState still works for the phone');
 
   const msg = ctx.installDailyTrigger();
   ok(/Not installed/.test(msg) && !(env.g.ScriptApp._newTriggerCalls && env.g.ScriptApp._newTriggerCalls.length),

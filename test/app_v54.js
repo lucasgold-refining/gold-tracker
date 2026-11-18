@@ -65,8 +65,8 @@ const actions = page => page.evaluate(() => window.__goldOutbox.items().map(x =>
     const { browser, context, page } = await open(srv, be);
     await context.setOffline(true); await page.waitForTimeout(150);
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(200);
-    await page.click('.mobile-only button.sell'); await page.waitForSelector('#dsGo'); await page.click('#dsGo');
-    await page.waitForTimeout(300);
+    await page.evaluate(() => enqueue({ action: 'sellStock', sellDate: '2026-11-18', sellBase: 8250, items: [{ no: 1, weightBhy: 2, purity: 0.998, cost: 8000 }], expectSheetNos: [1] }));
+    await page.waitForTimeout(200);
     const rid = await page.evaluate(() => { const it = Q.find(x => x.action === 'sellStock'); it.uncertainAt = Date.now(); return it.rid; });
     await page.evaluate(() => { render(); });
     await page.click('nav button[data-v=sales]'); await page.waitForTimeout(200);
@@ -118,14 +118,16 @@ const actions = page => page.evaluate(() => window.__goldOutbox.items().map(x =>
     await page.click('.mobile-only button[aria-label="Edit #1"]'); await page.waitForSelector('#ec');
     await page.fill('#ec', '8001'); await page.click('#esave'); await page.waitForTimeout(300);
     ok((await actions(page)).indexOf('editPurchase') >= 0, 'D: the edit is queued');
-    await page.click('.mobile-only button.sell'); await page.waitForSelector('#dsGo'); await page.click('#dsGo'); await page.waitForTimeout(300);
+    await page.click('#sellBtn'); await page.waitForSelector('#gpGo');
+    await page.click('#gpList input[data-no="1"]'); await page.click('#gpGo'); await page.waitForTimeout(300);
     const q = await actions(page);
-    ok(q.indexOf('sellStock') < 0 && q.indexOf('editPurchase') >= 0, 'D: the sale was not queued over the waiting edit (' + q.join() + ')');
+    ok(q.indexOf('batchRefine') < 0 && q.indexOf('sellStock') < 0 && q.indexOf('editPurchase') >= 0, 'D: the group was not queued over the waiting edit (' + q.join() + ')');
     await page.evaluate(() => closeModal());
     const rid = await page.evaluate(() => Q.find(x => x.action === 'editPurchase').rid);
     await page.evaluate(rid => qRemove(rid), rid); await page.waitForTimeout(200);
-    await page.click('.mobile-only button.sell'); await page.waitForSelector('#dsGo'); await page.click('#dsGo'); await page.waitForTimeout(300);
-    ok((await actions(page)).indexOf('sellStock') >= 0, 'D: after the edit is deleted the sale can be queued');
+    await page.click('#sellBtn'); await page.waitForSelector('#gpGo');
+    await page.click('#gpList input[data-no="1"]'); await page.click('#gpGo'); await page.waitForTimeout(300);
+    ok((await actions(page)).indexOf('batchRefine') >= 0, 'D: after the edit is deleted the group can be queued');
     await browser.close();
   }
 

@@ -88,7 +88,7 @@ function logRows(env) {
 {
   const { post } = boot();
   const ping = post({ action: 'ping' });
-  ok(ping.version === 54 && ping.receipts === true, 'ping is version 50 with receipts:true');
+  ok(ping.version === 55 && ping.receipts === true, 'ping is version 50 with receipts:true');
 }
 
 // getState after a non-lite write is built after the lock is released
@@ -97,7 +97,7 @@ function logRows(env) {
   post({ action: 'ping' });
   st.reset();
   const r = post({ action: 'addPurchase', rid: 'full-1', date: '2026-11-13', weightBhy: 2.5, purity: 0.871, cost: 8875 });
-  ok(r.ok && r.state && r.state.version === 54, 'non-lite addPurchase still returns full state');
+  ok(r.ok && r.state && r.state.version === 55, 'non-lite addPurchase still returns full state');
   // Archive is 403 rows; a getState under the lock would add ~6k cells. After the lock, underLock.cellsRead should be the write/log path only.
   ok(r.state && r.ok, 'write succeeded');
   ok((st.underLock.cellsRead || 0) < 2000,

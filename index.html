@@ -324,7 +324,7 @@ div.bgrp .bglbl{font-size:12px;font-weight:700;color:var(--brown);padding:5px 0 
 .rpick .pick input:disabled{opacity:.9;}
 .ed.sell{background:var(--greenbg);color:var(--green);font-size:14px;font-weight:800;min-width:52px;padding:0 8px;}
 .sellnote{margin:-4px 0 12px;}
-#dsList .body,#dsReview .body{overflow-wrap:anywhere;}
+#dsList .body,#dsReview .body,#gpList .body{overflow-wrap:anywhere;}
 .rpsum{font-size:15px;font-weight:700;margin-top:8px;}
 .rpnote{margin-top:6px;font-size:13px;}
 #rpFigs div{gap:10px;}
@@ -344,6 +344,8 @@ div.bgrp .bglbl{font-size:12px;font-weight:700;color:var(--brown);padding:5px 0 
 .batch .grid>div{min-width:0;}
 .batch .grid b{white-space:nowrap;}
 .sale{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:16px;}
+.sacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+.sacts .btn{margin-top:0;}
 .sale:last-child{border-bottom:0;}
 .empty{text-align:center;color:var(--muted);padding:22px 10px;}
 .banner{background:var(--warn-bg);color:var(--warn-text);border:1px solid var(--goldline);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:15px;}
@@ -645,7 +647,7 @@ input:-webkit-autofill,input:-webkit-autofill:focus{-webkit-text-fill-color:var(
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 54;
+const APP_VERSION = 55;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -981,8 +983,10 @@ const isRemove = it => !!it && it.action === 'removeFromBatch';
 const isRefine = it => !!it && it.action === 'batchRefine';
 const isDirect = it => !!it && it.action === 'sellStock';
 const isGroupSale = it => !!it && it.action === 'sellBatches';
-const isV48Action = it => isOtherSale(it) || isEdit(it) || isDel(it) || isAddTo(it) || isRemove(it) || isRefine(it) || isDirect(it) || isGroupSale(it);
-const Q_ACTIONS = { addPurchase:1, recordBatchSale:1, setBatchEstimate:1, addSale:1, editPurchase:1, deletePurchase:1, addToBatch:1, removeFromBatch:1, batchRefine:1, sellStock:1, sellBatches:1 };
+const isUndoDirect = it => !!it && it.action === 'undoDirectSale';
+const isCorrectDirect = it => !!it && it.action === 'correctDirectSale';
+const isV48Action = it => isOtherSale(it) || isEdit(it) || isDel(it) || isAddTo(it) || isRemove(it) || isRefine(it) || isDirect(it) || isGroupSale(it) || isUndoDirect(it) || isCorrectDirect(it);
+const Q_ACTIONS = { addPurchase:1, recordBatchSale:1, setBatchEstimate:1, addSale:1, editPurchase:1, deletePurchase:1, addToBatch:1, removeFromBatch:1, batchRefine:1, sellStock:1, sellBatches:1, undoDirectSale:1, correctDirectSale:1 };
 const purchasesQ = () => Q.filter(isPur);
 const salesQ = () => Q.filter(x => isSale(x) || isOtherSale(x) || isDirect(x) || isGroupSale(x));
 const estQ = () => Q.filter(isEst);
@@ -992,6 +996,8 @@ const hasPickRefine = () => !!(ST && hasReceipts() && (ST.pickRefine === true ||
 const DIRECT_MIN = 0.998;   // actual fraction. A purity that only rounds to 99.8% on screen is not enough.
 const isDirectEligible = it => { const p = Number(it && it.purity); return isFinite(p) && p > 0 && p <= 1 && p + 1e-9 >= DIRECT_MIN; };
 const hasDirectSale = () => !!(ST && hasReceipts() && (ST.directSale === true || (ST.directSale == null && Number(ST.version) >= 51)));   // Api.gs v51
+const hasDirectTools = () => !!(ST && hasReceipts() && Number(ST.version) >= 55);   // correct / undo an existing DS- sale
+const isDirectId = id => /^DS-[1-9]\d*(?:\.[1-9]\d*)*$/.test(String(id || ''));
 const canQueue = action => action === 'addPurchase' || action === 'recordBatchSale' || action === 'setBatchEstimate' || (hasReceipts() && Q_ACTIONS[action] && action !== 'undoLastBatch');
 let syncedNo = {};   // rid -> sheet No. of a purchase that just synced (dependents)
 let Q = [], syncing = false, inflight = '';
@@ -1146,9 +1152,10 @@ function stockMatch(it) {
 function bindingHoldTxt() { return 'These waiting items are for a different Gold Tracker sheet than the one in Settings. Export them, or delete them, then try again.'; }
 function pickHoldTxt() { return 'This refine is for the items you ticked. It needs Api.gs v50 on the sheet. It will stay here until that script is deployed, or delete it and refine again.'; }
 function directHoldTxt() { return 'This direct sale needs Api.gs v51 on the sheet. It will stay here until that script is deployed, or delete it and sell again.'; }
+function directToolHoldTxt() { return 'Correcting or undoing a direct sale needs Api.gs v55 on the sheet. It will stay here until that script is deployed, or delete it.'; }
 function v13HoldTxt() { return 'This action needs Api.gs v14 on the sheet (durable receipts). It will stay here until that script is deployed, or delete it and do it when you have internet.'; }
 function conflictHold(msg) {
-  return /stock changed|no longer In stock|already exists|already sold|not found|cannot go back|Nothing was refined|Nothing was sold|can no longer be changed|is not on the sheet|only item in batch|below 99\.8|already on the Sales tab|listed twice|not a fraction/i.test(String(msg || ''));
+  return /stock changed|no longer In stock|already exists|already sold|not found|cannot go back|Nothing was refined|Nothing was sold|Nothing was undone|Nothing was changed|can no longer be changed|is not on the sheet|only item in batch|below 99\.8|already on the Sales tab|already on Purchases|listed twice|not a fraction|do not match the sale/i.test(String(msg || ''));
 }
 function waitingOn(it) { return (it.waitRids || []).filter(r => Q.some(x => x.rid === r)); }
 function resolveNos(it) {
@@ -1177,6 +1184,13 @@ function localDefaultBatchId() {
   while (have.has(id)) id = 'R-' + day + '-' + (k++);
   return id;
 }
+function freeBatchId(prefer) {
+  let id = String(prefer || '').trim() || localDefaultBatchId();
+  const have = new Set((ST && ST.batches || []).map(x => x.id).concat(Q.filter(isRefine).map(x => x.batchId).filter(Boolean)));
+  if (!have.has(id)) return id;
+  const base = id; let k = 2; while (have.has(base + '-' + k)) k++;
+  return base + '-' + k;
+}
 let syncAgain = false;
 async function syncQueue(opt) {
   opt = opt || {};
@@ -1202,6 +1216,7 @@ async function syncQueue(opt) {
       if (isV48Action(it) && !hasReceipts()) { await qUpdate(r0, x => { x.hold = v13HoldTxt(); }); tried.add(r0); continue; }
       if (isRefine(it) && it.pick && !hasPickRefine()) { await qUpdate(r0, x => { x.hold = pickHoldTxt(); }); tried.add(r0); continue; }
       if ((isDirect(it) || isGroupSale(it)) && !hasDirectSale()) { await qUpdate(r0, x => { x.hold = directHoldTxt(); }); tried.add(r0); continue; }
+      if ((isUndoDirect(it) || isCorrectDirect(it)) && !hasDirectTools()) { await qUpdate(r0, x => { x.hold = directToolHoldTxt(); }); tried.add(r0); continue; }
       if (waitingOn(it).length) { tried.add(r0); waited = true; continue; }
       tried.add(r0);
       // v13/Phase 1: after a long uncertain wait, hold if a matching stock/sale row may already exist.
@@ -1275,6 +1290,12 @@ async function syncQueue(opt) {
         } else if (isGroupSale(it)) {
           j = await api('sellBatches', { batchIds: it.batchIds || [], sellDate: it.sellDate, sellBase: it.sellBase, actualAmt: it.actualAmt }, true, { rid: it.rid, timeout: 60000 });
           if (j.state) gotState = true;
+        } else if (isCorrectDirect(it)) {
+          j = await api('correctDirectSale', { saleId: it.saleId, sellDate: it.sellDate, sellBase: it.sellBase, actualAmt: it.actualAmt }, true, { rid: it.rid, timeout: 45000 });
+          if (j.state) gotState = true;
+        } else if (isUndoDirect(it)) {
+          j = await api('undoDirectSale', { saleId: it.saleId }, true, { rid: it.rid, timeout: 60000 });
+          if (j.state) gotState = true;
         } else {
           await qUpdate(r0, x => { x.error = 'Unknown waiting action.'; });
           continue;
@@ -1311,6 +1332,8 @@ function qKindLabel(it) {
   if (isRefine(it)) return 'refine';
   if (isDirect(it)) return 'sale';
   if (isGroupSale(it)) return 'sale';
+  if (isCorrectDirect(it)) return 'sale';
+  if (isUndoDirect(it)) return 'undo';
   return 'purchase';
 }
 function qLine(it) {
@@ -1324,13 +1347,15 @@ function qLine(it) {
     : isRefine(it) ? `Refine ${it.batchId || 'new batch'}`
     : isDirect(it) ? `Direct sale · ${fmtDate(it.sellDate)} · ${(it.items || []).length} item${(it.items || []).length === 1 ? '' : 's'}`
     : isGroupSale(it) ? `Refined batches · ${(it.batchIds || []).join(', ')}`
+    : isCorrectDirect(it) ? `Correct ${it.saleId} · ${fmtDate(it.sellDate)}`
+    : isUndoDirect(it) ? `Undo ${it.saleId}`
     : `Estimate for ${it.batchId}`;
 }
 // Uncertain items may already be on the sheet.
 // A purchase that saved is still In stock: seeing it means drop the waiting row.
 // A sale that saved has left Stock (direct) or is Sold on Sales (a batch). Seeing the
 // items still In stock, or the batch still Refining, means it was NOT saved — send the same rid again.
-function qSaleCheck(it) { return isDirect(it) || isGroupSale(it) || isSale(it); }
+function qSaleCheck(it) { return isDirect(it) || isGroupSale(it) || isSale(it) || isUndoDirect(it) || isCorrectDirect(it); }
 function qCheckStock(it, kind, nextNotOnSheet) {
   if (qSaleCheck(it)) return qCheckSale(it);
   modal(`<h2>Check Stock first</h2>
@@ -1346,6 +1371,20 @@ function qCheckStock(it, kind, nextNotOnSheet) {
   $('#qNotSheet').onclick = () => { closeModal(); nextNotOnSheet(); };
 }
 function qCheckSale(it) {
+  if (isUndoDirect(it)) {
+    modal(`<h2>Check Recent sales and Stock</h2>
+      <p>This undo may already have reached the sheet (the sheet didn't confirm).</p>
+      <p>${esc(qLine(it))}</p>
+      <p class="muted">If this direct sale is gone from Recent sales and its items are back In stock, it was undone — drop this waiting item. If the sale is still listed, it was not undone — send this same request again.</p>
+      <button class="btn" id="qOpenStock">Open Recent sales</button>
+      <button class="btn light" id="qOnSheet">It's undone — drop this waiting item</button>
+      <button class="btn light" id="qNotSheet">Still listed — send this undo again</button>
+      <button class="btn light" onclick="closeModal()">Cancel</button>`);
+    $('#qOpenStock').onclick = () => { closeModal(); go('sales'); };
+    $('#qOnSheet').onclick = () => { closeModal(); qRemove(it.rid).then(() => { render(); toast('Dropped. The sale should already be undone.'); }); };
+    $('#qNotSheet').onclick = () => { closeModal(); qRetry(it.rid); };
+    return;
+  }
   const direct = isDirect(it);
   const title = direct ? 'Check Sales first' : 'Check Sales and Refining';
   const look = direct
@@ -1403,6 +1442,8 @@ function qEdit(r) {
   if (isEdit(it)) return editItem(it.no, it);
   if (isDirect(it)) return openDirectSale(null, it);
   if (isGroupSale(it)) return openBatchGroup(it);
+  if (isUndoDirect(it)) return openUndoDirect(it.saleId, it);
+  if (isCorrectDirect(it)) return openCorrectDirect(it.saleId, it);
   if (isDel(it) || isAddTo(it) || isRemove(it) || isRefine(it)) return toast('Delete this waiting item to change it, then do it again.');
   if (it.uncertainAt) {
     return qCheckStock(it, 'purchase', () => qEditForm(it));
@@ -2141,10 +2182,9 @@ const noHdr = () => ST && ST.batchNos ? 'Batch #' : 'No.';
 function directCovers(it) {
   return Q.some(s => isDirect(s) && ((it.rid && (s.waitRids || []).includes(it.rid)) || (it.no > 0 && (s.expectSheetNos || s.nos || []).map(Number).includes(Number(it.no)))));
 }
-function sellAct(it, unsynced) {
-  if (!hasDirectSale() || !isDirectEligible(it) || directCovers(it)) return '';
-  if (unsynced) return `<button type="button" class="ed sell" aria-label="Sell unsynced purchase" onclick="openDirectSale({rid:'${esc(it.rid)}'})">Sell</button>`;
-  return `<button type="button" class="ed sell" aria-label="Sell #${esc(dno(it))}" onclick="openDirectSale({no:${Number(it.no)}})">Sell</button>`;
+function sellAct() {
+  // v55: 99.8% stock is not sold from this list. Group 99.8% moves the ticked rows into one refining batch.
+  return '';
 }
 function itemRowHTML(it, g) {   // g: profit group (Stock list, or Buy's always-shown list)
   g = typeof g === 'string' ? g : 'stock:list';
@@ -2198,11 +2238,13 @@ function qMiscRowHTML(it) {
   else if (isRefine(it)) { title = '<span class="qkind">Refine</span><span class="qid">' + esc(it.batchId || 'new batch') + '</span>'; const n = resolveNos(it).length + wait; detail = (n ? n + ' item' + (n === 1 ? '' : 's') + (it.pick ? ' ticked' : '') : 'In stock items') + (wait ? ' · waiting for purchases to get a No.' : ''); }
   else if (isDirect(it)) { title = '<span class="qkind">Direct sale</span>' + esc(fmtDate(it.sellDate)); const fig = directFigures(it.items || [], parseNum(it.sellBase), parseNum(it.actualAmt)); detail = `${(it.items || []).length} item${(it.items || []).length === 1 ? '' : 's'} · cost ${peso(fig.cost)}${fig.received != null ? ' · received ' + peso(fig.received) : ''}${fig.profit != null ? ' · profit ' + peso(fig.profit) : ''}` + (wait ? ' · waiting for a purchase to get a No.' : ''); }
   else if (isGroupSale(it)) { title = '<span class="qkind">Refined sale</span>' + esc(fmtDate(it.sellDate)); detail = `${(it.batchIds || []).length} batch${(it.batchIds || []).length === 1 ? '' : 'es'} · ${(it.batchIds || []).map(esc).join(', ')} · still on the Refining tab until this is recorded`; }
+  else if (isCorrectDirect(it)) { title = '<span class="qkind">Correct</span>' + esc(saleKindTxt(it.saleId)); detail = `${esc(fmtDate(it.sellDate))} · base ${it.sellBase === '' || it.sellBase == null ? '—' : peso(it.sellBase)}${it.actualAmt !== '' && it.actualAmt != null ? ' · received ' + peso(it.actualAmt) : ''}`; }
+  else if (isUndoDirect(it)) { title = '<span class="qkind">Undo sale</span>' + esc(saleKindTxt(it.saleId)); detail = 'Puts those items back In stock and removes this sale only'; }
   else { title = esc(qKindLabel(it)); detail = ''; }
   return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no"><span aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span></span><div class="body"><b>${title}</b> ${qBadge(it)}<br>
     <span class="muted">${detail}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
-    ${it.error ? `<span class="qerr">Sheet said: ${esc(it.error)}</span>` : ''}${it.hold ? `<span class="qhold">${esc(it.hold)}</span>` : ''}${it.uncertainAt ? `<span class="qhold">${esc(isDirect(it) ? 'This may already be on the sheet. Check Sales before deleting it. If the items are still In stock, the sale was not saved.' : isGroupSale(it) ? 'This may already be on the sheet. Check Sales and Refining before deleting it. Still Refining means it was not saved.' : 'This may already be on the sheet. Check before deleting it.')}</span>` : ''}</div>
-    <div class="acts">${it.error ? `<button class="ed" aria-label="Retry" title="Retry" onclick="qRetry('${esc(it.rid)}')">↻</button>` : ''}${it.hold ? `<button class="ed" aria-label="Send anyway" title="Send anyway" onclick="qRetry('${esc(it.rid)}',true)">⤴</button>` : ''}${isOtherSale(it) || isEdit(it) || isDirect(it) || isGroupSale(it) ? `<button class="ed" aria-label="Edit unsynced ${esc(qKindLabel(it))}" onclick="qEdit('${esc(it.rid)}')">✏️</button>` : ''}<button class="x" aria-label="Delete unsynced ${esc(qKindLabel(it))}" onclick="qDel('${esc(it.rid)}')">🗑️</button></div></div>`;
+    ${it.error ? `<span class="qerr">Sheet said: ${esc(it.error)}</span>` : ''}${it.hold ? `<span class="qhold">${esc(it.hold)}</span>` : ''}${it.uncertainAt ? `<span class="qhold">${esc(isUndoDirect(it) ? 'This may already be undone. If the sale is gone and the items are In stock, drop this. If the sale is still listed, send it again.' : isDirect(it) ? 'This may already be on the sheet. Check Sales before deleting it. If the items are still In stock, the sale was not saved.' : isGroupSale(it) || isCorrectDirect(it) ? 'This may already be on the sheet. Check Sales before deleting it.' : 'This may already be on the sheet. Check before deleting it.')}</span>` : ''}</div>
+    <div class="acts">${it.error ? `<button class="ed" aria-label="Retry" title="Retry" onclick="qRetry('${esc(it.rid)}')">↻</button>` : ''}${it.hold ? `<button class="ed" aria-label="Send anyway" title="Send anyway" onclick="qRetry('${esc(it.rid)}',true)">⤴</button>` : ''}${isOtherSale(it) || isEdit(it) || isDirect(it) || isGroupSale(it) || isCorrectDirect(it) || isUndoDirect(it) ? `<button class="ed" aria-label="Edit unsynced ${esc(qKindLabel(it))}" onclick="qEdit('${esc(it.rid)}')">✏️</button>` : ''}<button class="x" aria-label="Delete unsynced ${esc(qKindLabel(it))}" onclick="qDel('${esc(it.rid)}')">🗑️</button></div></div>`;
 }
 function qAnyRowHTML(it) { return isSale(it) ? qSaleRowHTML(it) : isEst(it) ? qEstRowHTML(it) : isV48Action(it) ? qMiscRowHTML(it) : qRowHTML(it); }
 function queueHTML(inlQ) {   // inlQ: inlineQ() when the caller has it already
@@ -2229,9 +2271,8 @@ function directCandidates(V) {
 }
 function sellBtnHTML(V) {
   const C = directCandidates(V);
-  if (!C.n) return '';
-  if (!hasDirectSale()) return `<div class="note sellnote" id="sellNote">Update the sheet script (Api.gs v51) to sell 99.8% items directly. Until then they stay In stock.</div>`;
-  return `<button type="button" class="btn green" id="sellBtn" style="margin:0 0 12px" onclick="openDirectSale()">Sell 99.8%…</button>`;
+  if (!C.n || !hasPickRefine()) return '';
+  return `<button type="button" class="btn green" id="sellBtn" style="margin:0 0 12px" onclick="openGroup998()">Group 99.8%…</button>`;
 }
 // v33: purchases saved together (one batch "Save all", Api.gs v10 qid) sit together in a box, at the first one's place.
 // Old rows, rows typed in the sheet and single saves have no qid and stay on their own. Returns [{ qid, rows }]
@@ -2520,8 +2561,83 @@ function localRefinePreview() {
   };
 }
 
+// ---------- v55: Group 99.8% uses batchRefine (pickNos), the same action as Batch refine ----------
+// Ticked In stock rows whose purity is actually >= 99.8% become one refining batch. The sheet already
+// marks them Refined, sums grams × purity into the batch's refined weight, and folds one refining fee
+// into Cost incl. fee. Status stays Refining, so the batch counts as in stock and Sell refined can
+// record the sale with no actual weight typed. A sale already waiting in the queue (sellStock) is left
+// alone: this button does not start a new direct sale.
+async function openGroup998() {
+  if (!hasPickRefine()) { render(); return alert('Update the sheet script (Api.gs v50) to group chosen 99.8% items into one refining batch.'); }
+  const pool = directPool();
+  const sheet = pool.sheet.filter(it => !directCovers(it));
+  const pend = pool.pend.filter(it => !directCovers(it));
+  if (!sheet.length && !pend.length) return toast(pool.sheet.length || pool.pend.length ? 'Those 99.8% items already have a sale waiting to sync.' : 'No 99.8% items in stock to group.');
+  const btn = $('#sellBtn'); if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  let p = null;
+  if (navigator.onLine && !netDown && connected()) {
+    try { const j = await api('batchPreview'); if (j && j.preview) p = j.preview; }
+    catch (e) {
+      if (!hasReceipts() || !e.net) { alert(e.net && !navigator.onLine ? OFFLINE_MSG : e.message); render(); return; }
+    }
+  }
+  if (!p) p = localRefinePreview();
+  render();
+  const below = ((ST && ST.stock) || []).length + (hasReceipts() ? unsyncedPurchases().length : 0) - pool.sheet.length - pool.pend.length;
+  const defId = freeBatchId(p.defaultBatchId);
+  const row = (it, kind, key) => `<label class="pick"><input type="checkbox" data-${kind}="${esc(key)}" aria-label="Group ${kind === 'no' ? '#' + esc(dno(it)) : 'unsynced purchase'}"><span class="body">${kind === 'no' ? pickLine(it) : `${wt(it.weightBhy)} BHY · ${pct(it.purity)} · ${peso(it.cost)} <span class="badge">waiting to sync</span>`}</span></label>`;
+  const offNote = !navigator.onLine ? `<div class="muted">You're offline. This group is saved on this device and moves to Refining when you're back online.</div>` : '';
+  modal(`<h2 id="gpTitle">Group 99.8%</h2>
+    <div class="muted">Tick the items for one refining batch. They are already 99.8% or higher, so the batch is ready to sell on Refining. Its refined weight is the combined grams × purity. Sell it there with Sell refined. The refining fee is inside the cost. Items below 99.8% are not listed.</div>${offNote}
+    <div class="pickhd"><span class="muted" id="gpN">${sheet.length + pend.length} can be grouped</span><button type="button" class="btn light sm" id="gpAll">Select all</button></div>
+    <div class="rpick" id="gpList">${sheet.map(it => row(it, 'no', String(it.no))).join('')}${pend.map(it => row(it, 'rid', it.rid)).join('')}</div>
+    ${below > 0 ? `<div class="muted rpnote" id="gpBelow">${below} item${below === 1 ? '' : 's'} below 99.8% stay In stock.</div>` : ''}
+    <div class="rpsum" id="gpSum">Nothing ticked</div>
+    <div class="sumlist" id="gpFigs"></div>
+    <label for="gpid">Batch ID <span class="hint">leave blank for ${esc(defId)}</span></label><input id="gpid" type="text" placeholder="${esc(defId)}">
+    <button class="btn gold" id="gpGo" disabled>Group items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const boxes = () => [...document.querySelectorAll('#gpList input')];
+  const picked = () => boxes().filter(x => x.checked).map(x => x.dataset.no != null ? sheet.find(it => String(it.no) === x.dataset.no) : pend.find(it => it.rid === x.dataset.rid)).filter(Boolean);
+  const upd = () => {
+    const sel = picked(), f = refineTotals(sel, p);
+    $('#gpSum').textContent = sel.length ? `${sel.length} ticked · ${grams(f.rawG)} g · cost ${peso(f.costInclFee)}` : 'Nothing ticked';
+    $('#gpFigs').innerHTML = sel.length ? `<div><span>Items</span><b>${f.count}</b></div>
+      <div><span>Raw grams</span><b>${grams(f.rawG)} g</b></div>
+      <div><span>Refined grams</span><b>${grams(f.refinedG)} g</b></div>
+      <div id="gpCost"><span>Total cost</span><b>${peso(f.costInclFee)}</b></div>
+      <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
+      <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(f.estProfit, 'stock:refine')}</b></div>` : '';
+    const all = $('#gpAll'); all.textContent = boxes().length && boxes().every(x => x.checked) ? 'Select none' : 'Select all';
+    const go = $('#gpGo'); go.disabled = !sel.length; go.textContent = sel.length ? `Group ${sel.length} item${sel.length === 1 ? '' : 's'}` : 'Group items';
+    applyEye();
+  };
+  $('#gpList').addEventListener('change', upd);
+  $('#gpAll').onclick = () => { const b = boxes(), on = !b.every(x => x.checked); b.forEach(x => { x.checked = on; }); upd(); };
+  upd();
+  $('#gpGo').onclick = async () => {
+    const sel = picked(); if (!sel.length) return;
+    const batchId = $('#gpid').value.trim() || defId;
+    const nos = sel.filter(x => Number(x.no) > 0).map(x => Number(x.no));
+    const live = new Set(unsyncedPurchases().map(x => x.rid));
+    const waitRids = sel.map(x => x.rid).filter(r => r && live.has(r));
+    if (blockIfQueuedEdits(nos)) return;
+    if (canQueue('batchRefine')) {
+      const ok = await enqueue({ action: 'batchRefine', batchId, expectSheetNos: nos.slice().sort((a, b) => a - b), waitRids, pick: true });
+      if (!ok) return;
+      closeModal(); go('sales');
+      if (!navigator.onLine) return toast('Grouped offline. It will show on Refining when you are back online. Sell it there.', 4500);
+      toast(netDown ? 'Grouped on this device. It will show on Refining when the sheet answers.' : 'Grouped. Sell the batch from Refining once it syncs.', 4000);
+      syncQueue(); return;
+    }
+    if (!navigator.onLine) return alert(OFFLINE_MSG);
+    const r = await write('batchRefine', { batchId, pickNos: nos, expectNos: nos }, $('#gpGo'));
+    if (r) { closeModal(); go('sales'); toast(safeMsg(r.message), 4000); }
+  };
+}
+
 // ---------- v51: direct sale of In stock items that are actually >= 99.8% (no refining, no fee) ----------
-// Sale value = base × purity × grams, the same rule as projected sell and "If refined now". Cost is the
+// Kept for a sale that is already waiting to sync, and for sale rows already on the sheet (DS-…).
+// v55 does not start a new one from In stock. Sale value = base × purity × grams. Cost is the
 // original purchase cost only. The sheet checks every selected row again before it writes.
 function saleKindTxt(batch) {
   const b = String(batch || '');
@@ -3053,13 +3169,114 @@ function salesRestHTML() {
     if (isOtherSale(it)) return `<div class="sale pend"><div><b>${fmtDate(it.date)}</b><br><span class="muted">Other sale · waiting to sync · received ${peso(it.actual)}</span></div><span class="muted">Not confirmed</span></div>`;
     const b = (ST.batches || []).find(x => x.id === it.batchId), val = pendingSaleVal(it, b), cost = b ? Number(b.costInclFee) || 0 : 0;
     return `<div class="sale pend"><div><b>${fmtDate(it.sellDate)}</b><br><span class="muted">Batch ${esc(it.batchId)} · waiting to sync${val != null ? ' · received ' + peso(val) : ''}</span></div><span class="muted">Not confirmed</span></div>`; }).join('');
-  const correctBtn = s => (s.batch && !/^DS-/.test(String(s.batch)) && (ST.batches || []).some(b => b.id === s.batch)) ? `<button type="button" class="btn light sm" data-id="${esc(s.batch)}" onclick="openSale(this.dataset.id)">Correct</button>` : '';
-  const sales = (pendRows || L.length) ? pendRows + L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${esc(saleKindTxt(s.batch))} · received ${peso(s.actual)}</span>${correctBtn(s)}</div><b>${prof(s.profit, 'sales:sales')}</b></div>`).join('')
+  const correctBtn = s => {
+    const id = String(s.batch || '');
+    if (isDirectId(id)) {
+      if (!hasDirectTools()) return '';
+      const undo = pendingUndoFor(id), cor = pendingCorrectFor(id);
+      if (undo) return `<span class="sacts"><button type="button" class="btn light sm" data-sale="${esc(id)}" onclick="openUndoDirect(this.dataset.sale)">Undo waiting</button></span>`;
+      const c = `<button type="button" class="btn light sm cor" data-sale="${esc(id)}" onclick="openCorrectDirect(this.dataset.sale)">${cor ? 'Correct waiting' : 'Correct'}</button>`;
+      const u = `<button type="button" class="btn light sm undo" data-sale="${esc(id)}" onclick="openUndoDirect(this.dataset.sale)">Undo sale</button>`;
+      return `<span class="sacts">${c}${u}</span>`;
+    }
+    return (id && (ST.batches || []).some(b => b.id === id)) ? `<button type="button" class="btn light sm" data-id="${esc(id)}" onclick="openSale(this.dataset.id)">Correct</button>` : '';
+  };
+  const oldDirect = !hasDirectTools() && L.some(s => isDirectId(s.batch));
+  const sales = (pendRows || L.length) ? (oldDirect ? `<div class="note" id="dsOld">Update the sheet script (Api.gs v55) to correct or undo a direct sale.</div>` : '') + pendRows + L.map(s => `<div class="sale"><div><b>${fmtDate(s.date)}</b><br><span class="muted">${esc(saleKindTxt(s.batch))} · received ${peso(s.actual)}</span>${correctBtn(s)}</div><b>${prof(s.profit, 'sales:sales')}</b></div>`).join('')
     : '<div class="empty">No sales recorded yet.</div>';
   return `<div class="two"><div class="card" id="batchCard"><h2>Refining batches ${eyeBtn('sales:batches')}</h2>${sellRef}<div id="batchList">${batches}</div></div>
     <div class="card"><h2><span>Recent sales <span class="muted">profit</span></span>${eyeBtn('sales:sales')}</h2>${sales}<button class="btn light" onclick="openOtherSale()">＋ Add other sale</button></div></div>`;
 }
 function pendingSaleFor(id) { return Q.find(x => isSale(x) && x.batchId === id); }
+function pendingUndoFor(id) { return Q.find(x => isUndoDirect(x) && x.saleId === id); }
+function pendingCorrectFor(id) { return Q.find(x => isCorrectDirect(x) && x.saleId === id); }
+function directSaleOf(id) { return (ST && ST.sales || []).find(x => x.batch === id); }
+function openUndoDirect(saleId, existing) {
+  if (!hasDirectTools()) return alert('Update the sheet script (Api.gs v55) to undo a direct sale.');
+  const s = directSaleOf(saleId), it = existing || pendingUndoFor(saleId);
+  if (!s && !it) return toast('That direct sale is not on Recent sales.');
+  if (pendingCorrectFor(saleId) && !it) return toast('A correction of this sale is waiting to sync. Delete that first, then undo.');
+  const rec = s ? `Received ${peso(s.actual)} · cost ${peso(s.cost)}` : '';
+  modal(`<h2 id="undoTitle">Undo direct sale</h2>
+    <p id="undoWho"><b>${esc(saleKindTxt(saleId))}</b></p>
+    ${rec ? `<p id="undoAmt">${esc(rec)}</p>` : ''}
+    <p>This removes this sale and puts its items back In stock with their original number, weight, purity and cost. Other sales and other items stay as they are.</p>
+    ${it && it.uncertainAt ? `<div class="banner err">This may already be undone. If the sale is gone and the items are In stock, drop this waiting item. If the sale is still listed, send it again.</div>` : ''}
+    ${!navigator.onLine ? `<div class="muted">You're offline. The undo is saved on this device and sent when you're back online.</div>` : ''}
+    <button class="btn danger" id="undoGo">${it ? 'Save &amp; sync' : 'Undo sale'}</button>
+    <button class="btn light" onclick="closeModal()">Cancel</button>`);
+  $('#undoGo').onclick = async () => {
+    if (!hasDirectTools()) return alert('Update the sheet script (Api.gs v55) to undo a direct sale.');
+    if (it && it.uncertainAt && inflight !== it.rid && !it.force) return toast('This undo may already be on the sheet. Check Recent sales. If the sale is still listed, send it again from the waiting list.');
+    if (it && inflight !== it.rid && !it.uncertainAt) await qUpdate(it.rid, x => { x.error = ''; x.hold = ''; });
+    else if (!it) {
+      if (pendingUndoFor(saleId)) return toast('An undo of this sale is already waiting.');
+      if (!canQueue('undoDirectSale')) {
+        if (!navigator.onLine) return alert(OFFLINE_MSG);
+        const j = await write('undoDirectSale', { saleId }, $('#undoGo'));
+        if (j) { closeModal(); render(); toast(safeMsg(j.message), 4000); }
+        return;
+      }
+      const ok = await enqueue({ action: 'undoDirectSale', saleId });
+      if (!ok) return;
+    }
+    closeModal(); render();
+    if (!navigator.onLine) return toast('Undo saved offline. Will sync when back online', 3500);
+    toast(netDown ? 'Undo saved on this device. Will sync when the sheet answers' : 'Undo saved ✓, syncing…', 3000);
+    setTimeout(() => syncQueue(), 0);
+  };
+}
+function openCorrectDirect(saleId, existing) {
+  if (!hasDirectTools()) return alert('Update the sheet script (Api.gs v55) to correct a direct sale.');
+  const s = directSaleOf(saleId), it = existing || pendingCorrectFor(saleId);
+  if (!s && !it) return toast('That direct sale is not on Recent sales.');
+  if (pendingUndoFor(saleId)) return toast('An undo of this sale is waiting to sync. Delete that first.');
+  const preDate = it && it.sellDate ? it.sellDate : (s && /^\d{4}-\d{2}-\d{2}$/.test(s.date) ? s.date : todayISO());
+  const preBase = it ? (it.sellBase ?? '') : (s && s.base != null ? s.base : '');
+  const preAmt = it ? (it.actualAmt ?? '') : (s && s.actual != null ? s.actual : '');
+  const pure = s && s.base > 0 && s.estValue != null ? Number(s.estValue) / Number(s.base) : null;
+  const cost = s && s.cost != null ? Number(s.cost) : 0;
+  modal(`<h2 id="corTitle">${it ? 'Correction waiting to sync' : 'Correct sale'} · ${esc(saleKindTxt(saleId))}</h2>
+    <div class="muted">Same fields as a refining-batch correction: date, base and amount received. Grams and cost stay as recorded. Profit is amount received minus that cost.</div>
+    ${it && it.uncertainAt ? `<div class="banner err">This may already be on the sheet. Check Recent sales before changing it.</div>` : ''}
+    ${!navigator.onLine ? `<div class="muted">You're offline. The correction is saved on this device and sent when you're back online.</div>` : ''}
+    <label for="sd">Sell date</label><input id="sd" type="date" value="${esc(preDate)}">
+    <label for="sb">Sell base / gram (₱)</label><input id="sb" type="text" inputmode="decimal" value="${esc(preBase)}">
+    <label for="sa">Actual amount received (₱) <span class="hint">optional, overrides base × pure grams</span></label><input id="sa" type="text" inputmode="decimal" value="${esc(preAmt)}">
+    <div id="scalc"></div>
+    <button class="btn green" id="corGo">${it ? 'Save &amp; sync' : 'Save correction'}</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const calc = () => {
+    const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
+    const est = base > 0 && pure != null ? pure * base : null;
+    const val = amt != null && !isNaN(amt) ? amt : est;
+    $('#scalc').innerHTML = val != null ? `<div class="calc" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Received ${peso(val)} · profit <b>${prof(val - cost, 'sales:calc')}</b></span>${eyeBtn('sales:calc')}</div>` : '';
+    applyEye();
+  };
+  ['sb', 'sa'].forEach(k => $('#' + k).addEventListener('input', calc)); calc();
+  $('#corGo').onclick = async () => {
+    if (!hasDirectTools()) return alert('Update the sheet script (Api.gs v55) to correct a direct sale.');
+    const base = parseNum($('#sb').value), amt = parseNum($('#sa').value);
+    if (!$('#sd').value) return toast('Pick the sell date');
+    if (!(base > 0) && !(amt >= 0 && amt !== null && !isNaN(amt))) return toast('Enter the sell base or the amount received');
+    const fields = { saleId, sellDate: $('#sd').value, sellBase: base > 0 ? base : '', actualAmt: amt != null && !isNaN(amt) ? amt : '' };
+    if (it && it.uncertainAt && inflight !== it.rid && !it.force) return toast('This correction may already be on the sheet. Check Recent sales.');
+    if (it && inflight !== it.rid && !it.uncertainAt) await qUpdate(it.rid, x => { Object.assign(x, fields); x.error = ''; x.hold = ''; });
+    else if (!it) {
+      if (!canQueue('correctDirectSale')) {
+        if (!navigator.onLine) return alert(OFFLINE_MSG);
+        const j = await write('correctDirectSale', fields, $('#corGo'));
+        if (j) { closeModal(); render(); toast(safeMsg(j.message), 4000); }
+        return;
+      }
+      const ok = await enqueue({ action: 'correctDirectSale', ...fields });
+      if (!ok) return;
+    }
+    closeModal(); render();
+    if (!navigator.onLine) return toast('Correction saved offline. Will sync when back online', 3500);
+    toast(netDown ? 'Correction saved on this device. Will sync when the sheet answers' : 'Correction saved ✓, syncing…', 3000);
+    setTimeout(() => syncQueue(), 0);
+  };
+}
 function openSale(id, existing) {
   if (!existing && pendingGroupFor(id)) return openPendingGroup(id);
   const b = (ST.batches || []).find(x => x.id === id); if (!b) return;

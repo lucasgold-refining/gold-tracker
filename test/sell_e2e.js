@@ -1,10 +1,12 @@
-// v51 direct sale end to end: the app in Chromium talks to the real Code.gs + Api.gs (mock sheet).
-// One item, a chosen group, valuation without a refining fee, offline queue + reload, stale rows, v50 sheet.
+// v55: Group 99.8% moves ticked 99.8%+ stock into one refining batch (batchRefine pickNos).
+// It does not sell. The owner sells that batch with Sell refined. A sale already queued as
+// sellStock still syncs. The app talks to the real Code.gs + Api.gs on a mock sheet only.
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright-core');
 const { makeBackend, serve } = require('./real_backend');
 const ROOT = path.resolve(process.env.APP_ROOT || path.join(__dirname, '..'));
 const V50 = path.join(__dirname, 'fixtures', 'Api-v50.gs');
+const V15 = path.join(__dirname, 'fixtures', 'Api-v15.gs');
 const SHOTS = process.env.SHOTS || path.join(__dirname, 'shots');
 const CHROME = '/opt/google/chrome/chrome';
 let fails = 0, n = 0;
@@ -13,7 +15,11 @@ const ok = (c, m) => { n++; console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fa
 const SEED = [[2, 0.998, 8000], [2, 0.9, 4000], [3, 0.999, 1234567.89], [1, 0.997999, 3000], [1.5, 1, 9000]];
 const inStock = be => be.env.sheets.Purchases.d.slice(1).filter(r => r[0] !== '' && r[2] !== '' && (r[10] === 'In stock' || r[10] === '')).map(r => Number(r[0]));
 const saleIds = be => be.env.sheets.Sales.d.slice(10).map(r => r[8]).filter(x => x !== '' && x != null).map(String);
-const batchIds = be => be.env.sheets.Refining.d.slice(18).map(r => r[12]).filter(x => x !== '' && x != null);
+const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.0005;
+const openBatch = (be, id) => {
+  const st = be.post({ action: 'getState' }).state;
+  return (st.batches || []).find(b => b.id === id);
+};
 
 async function open(srv, be) {
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
@@ -36,7 +42,7 @@ async function drain(page, ms) {
 }
 const figsOf = page => page.evaluate(() => {
   const o = {};
-  document.querySelectorAll('#dsFigs > div').forEach(d => {
+  document.querySelectorAll('#gpFigs > div').forEach(d => {
     const k = d.querySelector('span').childNodes[0].textContent.replace(/\s+/g, ' ').trim();
     o[k] = d.querySelector('b').textContent.trim();
   });
@@ -47,68 +53,77 @@ const figsOf = page => page.evaluate(() => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const holder = {}; const srv = await serve(ROOT, holder);
 
-  // ===== A) one item from its Sell button
+  // ===== A) no per-item sell; the picker is only real 99.8%+ rows, and one item becomes a batch
   {
     const be = makeBackend(); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
     const { browser, page } = await open(srv, be);
-    ok(await page.evaluate(() => window.__goldOutbox.meta().version === 54), 'A: app sees version 54');
+    ok(await page.evaluate(() => window.__goldOutbox.meta().version === 55), 'A: sheet script is version 55');
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(250);
-    const labels = await page.$$eval('.mobile-only button.sell', a => a.map(b => b.getAttribute('aria-label')));
-    ok(labels.join('|') === 'Sell #1|Sell #3|Sell #5', 'A: Sell only on actual 99.8%+ rows (' + labels.join('|') + ')');
-    ok(!(await page.$('button.sell[aria-label="Sell #2"]')) && !(await page.$('button.sell[aria-label="Sell #4"]')), 'A: 90% and 99.7999% have no Sell button');
-    await page.click('.mobile-only button.sell[aria-label="Sell #1"]'); await page.waitForSelector('#dsGo');
-    ok((await page.textContent('#dsTitle')).includes('Review'), 'A: one item opens the review, not a silent sale');
-    const lines = await page.$$eval('#dsReview .body', a => a.map(x => x.textContent.replace(/\s+/g, ' ').trim()));
-    ok(lines.length === 1 && /#1/.test(lines[0]) && /99\.80%/.test(lines[0]) && /₱8,000\.00/.test(lines[0]), 'A: review shows the original line (' + lines[0] + ')');
+    ok((await page.$$('button.sell')).length === 0, 'A: no Sell button on a stock row');
+    ok((await page.textContent('#sellBtn')).trim() === 'Group 99.8%…', 'A: the stock action is Group 99.8%');
+    await page.click('#sellBtn'); await page.waitForSelector('#gpList');
+    const labels = await page.$$eval('#gpList input', a => a.map(x => x.getAttribute('aria-label')));
+    ok(labels.join('|') === 'Group #1|Group #3|Group #5', 'A: picker is only actual 99.8%+ rows (' + labels.join('|') + ')');
+    ok(!(await page.$('#gpList input[data-no="2"]')) && !(await page.$('#gpList input[data-no="4"]')), 'A: 90% and 99.7999% are not listed');
+    ok(!(await page.$('#dsGo')) && !(await page.$('#sd')), 'A: the picker is not a sale form');
+    const boxes = await page.$$eval('#gpList input', a => a.map(x => x.checked));
+    ok(boxes.length === 3 && boxes.every(c => !c), 'A: nothing starts ticked');
+    await page.click('#gpList input[data-no="1"]');
     const f = await figsOf(page);
-    const expectCost = await page.evaluate(() => peso(8000));
-    const expectVal = await page.evaluate(() => peso(Math.round(8250 * 0.998 * 1 * 100) / 100));
-    ok(f['Cost'] === expectCost && f['Sale value'] === expectVal && f['Items'] === '1', 'A: totals are base × purity × grams, cost has no fee (' + JSON.stringify(f) + ')');
-    ok(!/fee/i.test(await page.textContent('#dsFigs')) && !/refin/i.test(await page.textContent('#dsFigs')), 'A: no fee and no refining line in the totals');
+    const exp = await page.evaluate(() => ({ items: '1', raw: grams(1) + ' g', ref: grams(0.998) + ' g', cost: peso(8000 + 20000) }));
+    ok(f['Items'] === exp.items && f['Raw grams'] === exp.raw && f['Refined grams'] === exp.ref && f['Total cost'] === exp.cost, 'A: one item shows combined refined grams and the fee inside cost (' + JSON.stringify(f) + ')');
+    ok(!/fee/i.test(await page.textContent('#gpFigs')), 'A: the fee is not its own line');
     const before = srv.log.length;
-    await page.click('#dsGo'); ok(await drain(page), 'A: sale synced');
-    const req = srv.log.slice(before).find(x => x.action === 'sellStock');
-    ok(req && JSON.stringify(req.body.nos) === '[1]' && req.out && req.out.ok && req.out.saleId === 'DS-1', 'A: sent nos [1], sheet recorded DS-1');
+    await page.click('#gpGo'); ok(await drain(page), 'A: group synced');
+    const req = srv.log.slice(before).find(x => x.action === 'batchRefine');
+    ok(req && req.body.pickNos && JSON.stringify(req.body.pickNos) === '[1]' && req.out && req.out.ok, 'A: sent batchRefine pickNos [1]');
+    ok(!srv.log.slice(before).some(x => x.action === 'sellStock'), 'A: no sellStock was sent');
     ok(inStock(be).join() === '2,3,4,5', 'A: only #1 left stock');
-    ok(!batchIds(be).some(id => String(id).startsWith('DS-')), 'A: no refining batch was created for the sale');
-    await page.click('nav button[data-v=sales]'); await page.waitForTimeout(300);
-    ok(/Direct sale · No\. 1/.test(await page.textContent('#salesRest')), 'A: recent sales calls it a direct sale');
+    const b = openBatch(be, req.body.batchId);
+    ok(b && b.status === 'Refining' && b.items === 1 && near(b.refinedG, 0.998) && near(b.rawG, 1) && near(b.costInclFee, 28000) && b.actualG == null && near(b.silverG, 0), 'A: one refining batch, ready to sell at grams × purity, fee in the cost (' + JSON.stringify(b && { id: b.id, items: b.items, raw: b.rawG, ref: b.refinedG, cost: b.costInclFee, actual: b.actualG, silver: b.silverG, status: b.status }) + ')');
+    ok(!saleIds(be).some(id => id.startsWith('DS-')), 'A: no direct sale was written');
     await browser.close();
   }
 
-  // ===== B) group: nothing ticked, then a chosen pair, totals, record
+  // ===== B) a chosen pair becomes one batch, then Sell refined records it without a typed weight
   {
     const be = makeBackend(); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
     const { browser, page } = await open(srv, be);
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(200);
-    ok((await page.textContent('#sellBtn')).trim() === 'Sell 99.8%…', 'B: group button');
-    await page.click('#sellBtn'); await page.waitForSelector('#dsList');
-    const boxes = await page.$$eval('#dsList input', a => a.map(x => x.checked));
-    ok(boxes.length === 3 && boxes.every(c => !c), 'B: three eligible rows, none ticked');
-    ok(/below 99\.8%/.test(await page.textContent('#dsBelow')), 'B: the two lower items are called out as staying');
-    ok(await page.$eval('#dsNext', b => b.disabled), 'B: cannot review with nothing ticked');
-    await page.click('#dsAll');
-    ok((await page.textContent('#dsNext')).includes('Review 3'), 'B: select all offers all three');
-    await page.click('#dsAll');
-    await page.click('#dsList input[data-no="1"]'); await page.click('#dsList input[data-no="5"]');
-    ok((await page.textContent('#dsSum')).includes('2 ticked'), 'B: two ticked (' + (await page.textContent('#dsSum')) + ')');
-    await page.click('#dsNext'); await page.waitForSelector('#dsGo');
+    await page.click('#sellBtn'); await page.waitForSelector('#gpList');
+    ok(await page.$eval('#gpGo', b => b.disabled), 'B: cannot group with nothing ticked');
+    ok(/below 99\.8%/.test(await page.textContent('#gpBelow')), 'B: the two lower items are called out as staying');
+    await page.click('#gpAll');
+    ok((await page.textContent('#gpGo')).includes('Group 3'), 'B: select all offers all three');
+    await page.click('#gpAll');
+    await page.click('#gpList input[data-no="1"]'); await page.click('#gpList input[data-no="5"]');
+    ok((await page.textContent('#gpSum')).includes('2 ticked'), 'B: two ticked (' + (await page.textContent('#gpSum')) + ')');
     const f = await figsOf(page);
     const exp = await page.evaluate(() => {
-      const g = 2 / 2 + 1.5 / 2, pure = 1 * 0.998 + 0.75 * 1, cost = 8000 + 9000, est = Math.round(pure * 8250 * 100) / 100;
-      return { items: '2', grams: grams(g) + ' g', pure: grams(pure) + ' g', cost: peso(cost), est: peso(est), profit: peso(Math.round((est - cost) * 100) / 100) };
+      const raw = 2 / 2 + 1.5 / 2, ref = 1 * 0.998 + 0.75 * 1, cost = 8000 + 9000 + 20000;
+      return { items: '2', raw: grams(raw) + ' g', ref: grams(ref) + ' g', cost: peso(cost) };
     });
-    ok(f['Items'] === exp.items && f['Grams (as bought)'] === exp.grams && f['Pure grams'] === exp.pure && f['Cost'] === exp.cost && f['Sale value'] === exp.est, 'B: review totals match base × each purity × grams (' + JSON.stringify(f) + ')');
-    await page.evaluate(() => { setG('sales:calc', true); document.querySelector('#sb').dispatchEvent(new Event('input')); });
-    const profitTxt = await page.evaluate(() => document.querySelector('#dsFigs .big b').textContent.trim());
-    ok(profitTxt === exp.profit && exp.cost === '₱17,000.00', 'B: profit is value − cost, with no ₱20,000 fee (' + profitTxt + ' vs ' + exp.profit + ')');
+    ok(f['Items'] === exp.items && f['Raw grams'] === exp.raw && f['Refined grams'] === exp.ref && f['Total cost'] === exp.cost, 'B: totals are combined grams × purity, cost plus one fee (' + JSON.stringify(f) + ')');
     const before = srv.log.length;
-    await page.click('#dsGo'); ok(await drain(page), 'B: group synced');
-    const req = srv.log.slice(before).find(x => x.action === 'sellStock');
-    ok(req && JSON.stringify(req.body.nos) === '[1,5]' && req.out.saleId === 'DS-1.5', 'B: sent [1,5]');
+    await page.click('#gpGo'); ok(await drain(page), 'B: group synced');
+    const req = srv.log.slice(before).find(x => x.action === 'batchRefine');
+    ok(req && JSON.stringify(req.body.pickNos) === '[1,5]' && req.out && req.out.ok, 'B: sent pickNos [1,5]');
+    ok(!srv.log.slice(before).some(x => x.action === 'sellStock'), 'B: no sellStock');
     ok(inStock(be).join() === '2,3,4', 'B: #2 #3 #4 stay In stock');
-    const row = be.env.sheets.Sales.d.slice(10).find(r => String(r[8]) === 'DS-1.5');
-    ok(row && row[4] === 17000, 'B: sheet cost is 8,000 + 9,000, not plus the refining fee');
+    const b = openBatch(be, req.body.batchId);
+    ok(b && b.status === 'Refining' && b.items === 2 && near(b.refinedG, 1.748) && near(b.costInclFee, 37000) && b.actualG == null, 'B: one batch, refined weight 1.748 g, cost 37,000 (' + (b && b.refinedG) + ')');
+    await page.click('nav button[data-v=sales]'); await page.waitForTimeout(300);
+    ok(await page.$(`#batchList [data-bid="${req.body.batchId}"]`), 'B: the batch is on Refining');
+    await page.click('#sellRefBtn'); await page.waitForSelector('#bgList');
+    await page.click(`#bgList input[data-bid="${req.body.batchId}"]`);
+    await page.click('#bgNext'); await page.waitForSelector('#bgGo');
+    const mark = srv.log.length;
+    await page.click('#bgGo'); ok(await drain(page), 'B: Sell refined synced');
+    const sale = srv.log.slice(mark).find(x => x.action === 'sellBatches');
+    ok(sale && JSON.stringify(sale.body.batchIds) === JSON.stringify([req.body.batchId]) && sale.out && sale.out.ok, 'B: sold that batch with the existing group sale');
+    ok(openBatch(be, req.body.batchId).status === 'Sold', 'B: the batch is Sold only after the sale is recorded');
+    const row = be.env.sheets.Sales.d.slice(10).find(r => String(r[8]) === req.body.batchId);
+    ok(row && near(row[4], 37000) && !saleIds(be).some(id => String(id).startsWith('DS-')), 'B: the sale cost includes the fee and is not a DS- direct sale');
     await browser.close();
   }
 
@@ -121,24 +136,24 @@ const figsOf = page => page.evaluate(() => {
     await page.fill('#bw', '2.50'); await page.fill('#bp', '99.8'); await page.fill('#bc', '11111'); await page.click('#bsave');
     await page.waitForTimeout(400);
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(300);
-    await page.click('#sellBtn'); await page.waitForSelector('#dsList');
-    const pending = await page.$$eval('#dsList .badge', a => a.map(x => x.textContent.trim()));
+    await page.click('#sellBtn'); await page.waitForSelector('#gpList');
+    const pending = await page.$$eval('#gpList .badge', a => a.map(x => x.textContent.trim()));
     ok(pending.includes('waiting to sync'), 'C: the unsynced 99.8% purchase is in the picker');
-    await page.click('#dsList input[data-no="3"]');
-    await page.click('#dsList input[data-rid]');
-    await page.click('#dsNext'); await page.waitForSelector('#dsGo');
-    await page.click('#dsGo'); await page.waitForTimeout(400);
+    await page.click('#gpList input[data-no="3"]');
+    await page.click('#gpList input[data-rid]');
+    await page.click('#gpGo'); await page.waitForTimeout(400);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__goldOutbox); await page.evaluate(() => window.__goldOutbox.ready());
     await page.waitForTimeout(300);
-    const q = await page.evaluate(() => window.__goldOutbox.items().filter(x => x.action === 'sellStock' || x.action === 'addPurchase').map(x => x.action + ':' + (x.waitRids ? x.waitRids.length : 0)));
-    ok(q.includes('addPurchase:0') && q.some(x => x.startsWith('sellStock:')), 'C: after reload the purchase and the direct sale are still queued (' + q.join() + ')');
+    const q = await page.evaluate(() => window.__goldOutbox.items().filter(x => x.action === 'batchRefine' || x.action === 'addPurchase').map(x => x.action + ':' + (x.waitRids ? x.waitRids.length : 0) + ':' + (x.pick ? 'pick' : '')));
+    ok(q.includes('addPurchase:0:') && q.some(x => x.startsWith('batchRefine:1:pick')), 'C: after reload the purchase and the group refine are still queued (' + q.join() + ')');
     await context.setOffline(false); await page.waitForTimeout(200);
     ok(await drain(page, 15000), 'C: queue drained');
-    const reqs = srv.log.filter(x => x.action === 'sellStock');
+    const reqs = srv.log.filter(x => x.action === 'batchRefine');
     const sent = reqs[reqs.length - 1];
-    ok(sent && sent.body.nos.includes(3) && sent.body.nos.length === 2 && sent.out && sent.out.ok, 'C: sale nos include the new sheet No. (' + JSON.stringify(sent && sent.body.nos) + ')');
+    ok(sent && sent.body.pickNos.includes(3) && sent.body.pickNos.length === 2 && sent.out && sent.out.ok, 'C: refine nos include the new sheet No. (' + JSON.stringify(sent && sent.body.pickNos) + ')');
     ok(!inStock(be).includes(3) && inStock(be).includes(1) && inStock(be).includes(2), 'C: only the chosen sheet item left stock; #1 and the 90% item stay (' + inStock(be).join() + ')');
+    ok(!srv.log.some(x => x.action === 'sellStock'), 'C: the offline group did not become a direct sale');
     await browser.close();
   }
 
@@ -147,44 +162,59 @@ const figsOf = page => page.evaluate(() => {
     const be = makeBackend(); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
     const { browser, page } = await open(srv, be);
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(200);
-    await page.click('#sellBtn'); await page.click('#dsList input[data-no="1"]'); await page.click('#dsList input[data-no="5"]');
-    await page.click('#dsNext'); await page.waitForSelector('#dsGo');
+    await page.click('#sellBtn'); await page.click('#gpList input[data-no="1"]'); await page.click('#gpList input[data-no="5"]');
     ok(be.post({ action: 'deletePurchase', rid: 'gone', no: 5 }).ok, 'D: #5 deleted on the sheet');
     const mark = srv.log.length;
-    await page.click('#dsGo'); await page.waitForTimeout(1500); await drain(page, 4000);
-    const q = await page.evaluate(() => window.__goldOutbox.items().find(x => x.action === 'sellStock'));
-    ok(q && /No\. 5 is no longer In stock/.test(q.hold || '') && /Nothing was sold/.test(q.hold || ''), 'D: held with the sheet reason (' + (q && (q.hold || q.error)) + ')');
-    ok(inStock(be).includes(1) && !saleIds(be).some(id => id.startsWith('DS-')), 'D: #1 still In stock and no direct sale was written');
-    ok(srv.log.slice(mark).some(x => x.action === 'sellStock' && x.out && x.out.ok === false), 'D: the sheet refused the request');
+    const beforeIds = saleIds(be).slice();
+    await page.click('#gpGo'); await page.waitForTimeout(1500); await drain(page, 4000);
+    const q = await page.evaluate(() => window.__goldOutbox.items().find(x => x.action === 'batchRefine'));
+    ok(q && /No\. 5 is no longer In stock/.test(q.hold || '') && /Nothing was refined/.test(q.hold || ''), 'D: held with the sheet reason (' + (q && (q.hold || q.error)) + ')');
+    ok(inStock(be).includes(1), 'D: #1 still In stock');
+    ok(JSON.stringify(saleIds(be)) === JSON.stringify(beforeIds), 'D: no sale was written');
+    ok(srv.log.slice(mark).some(x => x.action === 'batchRefine' && x.out && x.out.ok === false), 'D: the sheet refused the refine');
     await browser.close();
   }
 
-  // ===== E) v50 sheet never receives sellStock
+  // ===== E) a sheet without pick-refine shows no group button and is not sent a partial refine
   {
     const mark = srv.log.length;
+    const be = makeBackend(V15); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
+    const { browser, page } = await open(srv, be);
+    await page.click('nav button[data-v=stock]'); await page.waitForTimeout(250);
+    ok(!(await page.$('#sellBtn')) && !(await page.$('button.sell')), 'E: v15 sheet shows no group button');
+    ok(srv.log.slice(mark).every(x => x.action !== 'sellStock' && x.action !== 'batchRefine'), 'E: no sell or refine was sent');
+    await browser.close();
+  }
+
+  // ===== E2) v50 can group (pickNos) and still never receives sellStock from this button
+  {
     const be = makeBackend(V50); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
     const { browser, page } = await open(srv, be);
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(250);
-    ok(!(await page.$('#sellBtn')) && !(await page.$('button.sell')), 'E: v50 sheet shows no sell button');
-    ok(/Api\.gs v51/.test(await page.textContent('#sellNote')), 'E: note says to update the sheet (' + (await page.textContent('#sellNote')) + ')');
-    ok(srv.log.slice(mark).every(x => x.action !== 'sellStock'), 'E: no sellStock request was sent');
+    ok((await page.textContent('#sellBtn')).trim() === 'Group 99.8%…', 'E2: v50 sheet can group 99.8% items');
+    const mark = srv.log.length;
+    await page.click('#sellBtn'); await page.click('#gpList input[data-no="1"]'); await page.click('#gpGo');
+    ok(await drain(page), 'E2: group synced on v50');
+    ok(srv.log.slice(mark).some(x => x.action === 'batchRefine' && JSON.stringify(x.body.pickNos) === '[1]' && x.out && x.out.ok), 'E2: v50 received batchRefine');
+    ok(srv.log.slice(mark).every(x => x.action !== 'sellStock'), 'E2: v50 was not sent sellStock');
     await browser.close();
   }
 
-  // ===== F) sale queued on v51, sheet rolled back to v50: held, not sent
+  // ===== F) group queued on v54, sheet rolled back below pick-refine: held, not sent
   {
     const be = makeBackend(); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
     const { browser, context, page } = await open(srv, be);
     await context.setOffline(true); await page.waitForTimeout(200);
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(200);
-    await page.click('.mobile-only button.sell[aria-label="Sell #1"]'); await page.waitForSelector('#dsGo'); await page.click('#dsGo');
+    await page.click('#sellBtn'); await page.waitForSelector('#gpGo');
+    await page.click('#gpList input[data-no="1"]'); await page.click('#gpGo');
     await page.waitForTimeout(300);
-    be.swapApi(V50); const mark = srv.log.length;
+    be.swapApi(V15); const mark = srv.log.length;
     await context.setOffline(false); await page.waitForTimeout(300);
     await page.evaluate(() => window.syncQueue && window.syncQueue()); await page.waitForTimeout(1500);
-    const q = await page.evaluate(() => window.__goldOutbox.items().find(x => x.action === 'sellStock'));
-    ok(q && /needs Api\.gs v51/.test(q.hold || ''), 'F: held for Api.gs v51 (' + (q && (q.hold || q.error)) + ')');
-    ok(srv.log.slice(mark).every(x => x.action !== 'sellStock') && inStock(be).includes(1), 'F: sellStock was not sent to the v50 sheet');
+    const q = await page.evaluate(() => window.__goldOutbox.items().find(x => x.action === 'batchRefine'));
+    ok(q && /needs Api\.gs v50/.test(q.hold || ''), 'F: held for Api.gs v50 (' + (q && (q.hold || q.error)) + ')');
+    ok(srv.log.slice(mark).every(x => x.action !== 'batchRefine' && x.action !== 'sellStock') && inStock(be).includes(1), 'F: the ticked refine was not sent to the old sheet');
     await browser.close();
   }
 
@@ -205,7 +235,7 @@ const figsOf = page => page.evaluate(() => {
     await browser.close();
   }
 
-  // ===== H) refined batches stay listed through grouping, review and a queued sale, and leave only once recorded
+  // ===== H) refined batches stay listed through grouping, review and a queued sale
   {
     const be = makeBackend(); holder.cur = be;
     be.add({ weightBhy: 2, purity: 0.9, cost: 4000 });
@@ -253,11 +283,27 @@ const figsOf = page => page.evaluate(() => {
     const st = be.post({ action: 'getState' }).state;
     ok(st.batches.filter(b => b.id === 'R-KEEP' || b.id === 'R-20261018').every(b => b.status === 'Sold'), 'H: sheet status is Sold');
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(200);
-    await page.click('.mobile-only button.sell'); await page.waitForSelector('#dsGo'); await page.click('#dsGo');
-    ok(await drain(page), 'H: direct sale of the unrefined 99.8% item synced');
-    ok(reg().indexOf('DS-2') < 0 && reg().every(id => !String(id).startsWith('DS-')), 'H: that direct sale was not added to the Refining register (' + reg().join() + ')');
+    ok(!(await page.$('button.sell')), 'H: the remaining 99.8% item has no Sell button');
+    await page.click('#sellBtn'); await page.waitForSelector('#gpGo'); await page.click('#gpList input'); await page.click('#gpGo');
+    ok(await drain(page), 'H: grouping the unrefined 99.8% item synced');
+    const added = reg().filter(id => before.indexOf(id) < 0);
+    ok(added.length === 1 && added.every(id => !String(id).startsWith('DS-')), 'H: that group was added as a refining batch (' + added.join() + ')');
     await page.click('nav button[data-v=sales]'); await page.waitForTimeout(300);
-    ok((await listed()).every(id => !String(id).startsWith('DS-')), 'H: direct sale did not appear as a refining batch');
+    ok((await listed()).indexOf(added[0]) >= 0, 'H: the new batch is on Refining, ready to sell');
+    await browser.close();
+  }
+
+  // ===== I) a direct sale already waiting in the queue still records, and does not become a batch
+  {
+    const be = makeBackend(); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
+    const { browser, page } = await open(srv, be);
+    const before = regIds(be);
+    await page.evaluate(() => enqueue({ action: 'sellStock', sellDate: '2026-11-18', sellBase: 8250, items: [{ no: 1, weightBhy: 2, purity: 0.998, cost: 8000 }], expectSheetNos: [1] }).then(() => syncQueue()));
+    ok(await drain(page), 'I: queued direct sale synced');
+    const req = srv.log.filter(x => x.action === 'sellStock').pop();
+    ok(req && JSON.stringify(req.body.nos) === '[1]' && req.out && req.out.ok && req.out.saleId === 'DS-1', 'I: the stored sellStock still records DS-1');
+    ok(!inStock(be).includes(1) && inStock(be).includes(2), 'I: only that item left stock');
+    ok(JSON.stringify(regIds(be).slice().sort()) === JSON.stringify(before.slice().sort()), 'I: the old direct sale did not add a refining batch');
     await browser.close();
   }
 
@@ -265,3 +311,7 @@ const figsOf = page => page.evaluate(() => {
   console.log(`\nSUMMARY sell_e2e ${n - fails} passed, ${fails} failed, of ${n}`);
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(2); });
+
+function regIds(be) {
+  return be.env.sheets.Refining.d.slice(18).map(r => String(r[12] || '')).filter(Boolean);
+}

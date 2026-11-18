@@ -57,7 +57,7 @@ function armArchiveFail(env) {
 {
   const B = boot();
   const ping = B.post({ action: 'ping' });
-  ok(ping.ok && ping.version === 54, 'POST body token still works');
+  ok(ping.ok && ping.version === 55, 'POST body token still works');
   const viaGet = B.get({ action: 'getState' });
   ok(viaGet.ok === false && viaGet.auth === false && !viaGet.state, 'GET ?token= cannot read the sheet');
   const viaQuery = JSON.parse(B.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'exportBackup' }) }, parameter: { token: B.T } }).text);

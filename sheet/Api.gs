@@ -1,7 +1,12 @@
 /**
- * Gold Tracker (Improved) - JSON API for the "Lucas Gold Tracker" app (PC + phone).  File v54.
- * Versioning: the app, Api.gs and Code.gs share one counting number (app v54 = Api.gs v54 = Code.gs v54).
+ * Gold Tracker (Improved) - JSON API for the "Lucas Gold Tracker" app (PC + phone).  File v55.
+ * Versioning: the app and Api.gs are v55. Code.gs stays v54 (this change does not edit it).
  *     Api.gs jumped from v15 straight to v50; v51 follows v50. Code.gs was v11 until v51.
+ * v55: correctDirectSale updates one existing DS- Sales row in place (date, base, sale value, amount
+ *     received). undoDirectSale removes that one Sales row and its Archive rows and puts those items
+ *     back on Purchases with the original number, weight, purity and cost. Same rid does not write
+ *     again. A second undo of a sale that is already gone changes nothing. A failed step puts back
+ *     what that attempt wrote. Other sales and other items are not written. Needs the v54 Code.gs.
  * v54: the token is read only from the POST body (a token on the URL is ignored, including exportBackup).
  *     Download backup stays a POST the phone already sends, so the owner backup button is unchanged.
  *     The existing token is not rotated. batchRefine rolls back item rows, the register row and Status
@@ -107,7 +112,7 @@
  */
 
 var GOLD_API = {
-  version: 54,         // 54: POST-body token only, batchRefine rollback before Archive deletes, shared purchase/sale/sync. 51: sellStock (direct sale of actual 99.8%+ stock, no refining fee), directSale flag. 50: batchRefine pickNos, pickRefine flag, batchPreview items. 15: receipts as v14, getState after lock, robust log, deferred prune, batched addPurchase writes. 14: durable ApiLog receipts under the document lock. 13: no Dashboard read, no item-scan in getState, getSettings, batch itemsCost/fee, batchPreview without state. 12: realizedMonths. 11: undoLastBatch. 10: purchase time + batch group, dailySold, add / remove items of an unsold batch. 9: getState daily. 8: Batch # + exportBackup. 7: setBatchEstimate. 6: silver excludes 99.8%+. 5: Archive Totals. 2: lite addPurchase, 6 h request-ID memory
+  version: 55,         // 55: correctDirectSale + undoDirectSale for an existing DS- sale. 54: POST-body token only, batchRefine rollback before Archive deletes, shared purchase/sale/sync. 51: sellStock (direct sale of actual 99.8%+ stock, no refining fee), directSale flag. 50: batchRefine pickNos, pickRefine flag, batchPreview items. 15: receipts as v14, getState after lock, robust log, deferred prune, batched addPurchase writes. 14: durable ApiLog receipts under the document lock. 13: no Dashboard read, no item-scan in getState, getSettings, batch itemsCost/fee, batchPreview without state. 12: realizedMonths. 11: undoLastBatch. 10: purchase time + batch group, dailySold, add / remove items of an unsold batch. 9: getState daily. 8: Batch # + exportBackup. 7: setBatchEstimate. 6: silver excludes 99.8%+. 5: Archive Totals. 2: lite addPurchase, 6 h request-ID memory
   dedupeSeconds: 21600, // CacheService maximum (6 hours); ApiLog is the durable record
   logSheet: 'ApiLog',
   logKeepDays: 90,
@@ -121,7 +126,9 @@ var GOLD_API = {
                   addToBatch: true, removeFromBatch: true,   // v10
                   undoLastBatch: true,                       // v11
                   sellStock: true,                       // v51 direct sale of 99.8%+ stock (no refining batch)
-                  sellBatches: true },                   // v51 sell a group of refining batches; the register rows stay
+                  sellBatches: true,                     // v51 sell a group of refining batches; the register rows stay
+                  correctDirectSale: true,               // v55 correct one existing DS- sale in place
+                  undoDirectSale: true },                // v55 undo one DS- sale and return its items to In stock
   baseMin: 1000,
   baseMax: 50000,
   manualSource: 'Manual (app)'
@@ -214,6 +221,7 @@ function goldApiHandle_(req, isPost) {
         if (res.restored !== undefined) { out.restored = res.restored; out.newer = res.newer; out.shift = res.shift; }   // v11
         if (res.est) { out.estBase = res.est.estBase; out.actualG = res.est.actualG; }
         if (res.saleId !== undefined) { out.saleId = res.saleId; out.nos = res.nos; }
+        if (res.already) out.already = true;
         if (res.batchIds !== undefined) out.batchIds = res.batchIds;
         goldApiStamp_(out);
         // Receipt is best-effort after a successful write: never turn a successful money write
@@ -701,6 +709,231 @@ function goldApiSellStock_(req) {
   });
 }
 
+// ---------- v55: correct or undo one existing direct sale (DS-…) ----------
+// A direct sale is one Sales row plus the Archive rows sellStock wrote for those item numbers.
+// Correct rewrites that Sales row only (and the sold date on those Archive rows). Undo puts the
+// Archive rows back on Purchases and clears only those Archive rows and that Sales row.
+var DIRECT_CLEAR_COLS = [1, 2, 3, 5, 7, 11, 12, 13, 15, 16, 17, 18, 20, 21];
+function goldApiDirectNos_(saleId) {
+  if (!directSaleId_(saleId)) return null;
+  return String(saleId).slice(3).split('.').map(function (x) { return Number(x); });
+}
+function goldApiSameNos_(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  var i; for (i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function goldApiArchiveDirect_(ar, saleId) {
+  var out = [];
+  if (!ar || ar.getLastRow() < ARCHIVE.firstDataRow) return out;
+  var n = ar.getLastRow() - ARCHIVE.firstDataRow + 1, w = ar.getMaxColumns();
+  ar.getRange(ARCHIVE.firstDataRow, 1, n, w).getValues().forEach(function (r, i) {
+    if (String(r[ARCHIVE.cols.batch - 1] || '').trim() === saleId && r[0] !== '' && r[0] !== null)
+      out.push({ row: ARCHIVE.firstDataRow + i, r: r });
+  });
+  return out;
+}
+function goldApiArchNos_(arch) {
+  var seen = {}, dup = false, nos = [];
+  arch.forEach(function (a) {
+    var n = Number(a.r[0]);
+    if (!(n > 0) || seen[n]) dup = true;
+    seen[n] = true; nos.push(n);
+  });
+  nos.sort(function (a, b) { return a - b; });
+  return { nos: nos, dup: dup };
+}
+function goldApiPurchaseHitNos_(pur, nos) {
+  var want = {}, hit = [];
+  nos.forEach(function (n) { want[n] = true; });
+  var last = pur.getLastRow();
+  if (last < PURCHASES.firstDataRow) return hit;
+  pur.getRange(PURCHASES.firstDataRow, PURCHASES.cols.no, last - PURCHASES.firstDataRow + 1, 1).getValues().forEach(function (v) {
+    var n = Number(v[0]);
+    if (want[n]) hit.push(n);
+  });
+  return hit;
+}
+function goldApiPickedFromArchive_(arch) {
+  return arch.map(function (a) {
+    var src = a.r, row = [], i;
+    for (i = 0; i < 17; i++) row.push('');
+    row[0] = src[0]; row[1] = src[1]; row[2] = src[2]; row[4] = src[4]; row[6] = src[6];
+    if (src.length >= ARCHIVE.cols.bno) row[BATCHNO.purCol - 1] = src[ARCHIVE.cols.bno - 1] || '';
+    if (src.length >= BUYINFO.arcQid) {
+      row[BUYINFO.purAt - 1] = src[BUYINFO.arcAt - 1] || '';
+      row[BUYINFO.purQid - 1] = src[BUYINFO.arcQid - 1] || '';
+    }
+    return { r: row };
+  });
+}
+function goldApiDirectBackOk_(pur, picked) {
+  var c = PURCHASES.cols, last = pur.getLastRow(), by = {};
+  if (last >= PURCHASES.firstDataRow) {
+    pur.getRange(PURCHASES.firstDataRow, 1, last - PURCHASES.firstDataRow + 1, Math.max(c.soldAmount, pur.getMaxColumns())).getValues().forEach(function (r) {
+      var n = Number(r[c.no - 1]);
+      var st = String(r[c.status - 1] || '').trim();
+      if (n > 0 && (st === 'In stock' || st === '')) by[n] = r;
+    });
+  }
+  return picked.every(function (p) {
+    var r = by[Number(p.r[0])];
+    if (!r) return false;
+    if (goldApiDate_(r[c.date - 1]) !== goldApiDate_(p.r[1])) return false;
+    if (Number(r[c.weightBhy - 1]) !== Number(p.r[2])) return false;
+    if (Math.abs(Number(r[c.purity - 1]) - Number(p.r[4])) > 1e-12) return false;
+    if (Number(r[c.cost - 1]) !== Number(p.r[6])) return false;
+    if (!(r[c.soldDate - 1] === '' || r[c.soldDate - 1] === null)) return false;
+    if (!(r[c.soldAmount - 1] === '' || r[c.soldAmount - 1] === null)) return false;
+    return true;
+  });
+}
+function goldApiClearArchiveRows_(ar, arch) {
+  var max = ar.getMaxColumns();
+  arch.forEach(function (a) {
+    DIRECT_CLEAR_COLS.forEach(function (c) { if (c <= max && c <= a.r.length) ar.getRange(a.row, c).setValue(''); });
+  });
+}
+function goldApiWriteArchiveRows_(ar, arch) {
+  var max = ar.getMaxColumns();
+  arch.forEach(function (a) {
+    DIRECT_CLEAR_COLS.forEach(function (c) {
+      if (c <= max && c <= a.r.length) ar.getRange(a.row, c).setValue(a.r[c - 1] === undefined || a.r[c - 1] === null ? '' : a.r[c - 1]);
+    });
+  });
+}
+function goldApiDeleteNos_(pur, nos) {
+  var want = {}, rows = [], last = pur.getLastRow();
+  nos.forEach(function (n) { want[n] = true; });
+  if (last < PURCHASES.firstDataRow) return;
+  pur.getRange(PURCHASES.firstDataRow, PURCHASES.cols.no, last - PURCHASES.firstDataRow + 1, 1).getValues().forEach(function (v, i) {
+    if (want[Number(v[0])]) rows.push(PURCHASES.firstDataRow + i);
+  });
+  rows.sort(function (a, b) { return b - a; });
+  if (rows.length && pur.getMaxRows() - rows.length < 50) pur.insertRowsAfter(pur.getMaxRows(), 100);
+  rows.forEach(function (row) { pur.deleteRow(row); });
+}
+function goldApiWriteSaleSnap_(sales, row, snap) {
+  sales.getRange(row, 1, 1, 6).setValues([[snap[0], snap[1], snap[2], snap[3], snap[4], snap[5]]]);
+  if (sales.getMaxColumns() >= SALES.batchCol) sales.getRange(row, SALES.batchCol).setValue(snap.length >= SALES.batchCol ? snap[SALES.batchCol - 1] : '');
+}
+function goldApiPureFromArchive_(arch) {
+  var bhy = getNamed_('BHYPerGram') || 2, pure = 0;
+  if (!(bhy > 0)) return null;
+  arch.forEach(function (a) { pure += Number(a.r[2]) / bhy * (Number(a.r[4]) || 0); });
+  return pure;
+}
+function goldApiCorrectDirectSale_(req) {
+  var saleId = String(req.saleId || '').trim();
+  if (!directSaleId_(saleId)) throw new Error('That is not a direct sale. Nothing was changed.');
+  var sellDate = toDate_(req.sellDate, 'Sell date', false);
+  var sellBase = toNumber_(req.sellBase, 'Sell base / gram', { optional: true, positive: true });
+  var amt = toNumber_(req.actualAmt, 'Actual received', { optional: true, min: 0 });
+  if (sellBase === '' && amt === '') throw new Error('Enter the sell base / gram or the actual amount received. Nothing was changed.');
+  var ss = SpreadsheetApp.getActive();
+  var sales = ss.getSheetByName(SALES.sheet), ar = ss.getSheetByName(ARCHIVE.sheet);
+  if (!sales) throw new Error('Sales tab not found. Nothing was changed.');
+  return goldApiWithOwnLock_(20000, function () {
+    var hits = goldApiSaleHits_(sales, saleId);
+    if (!hits.length) throw new Error('Direct sale ' + saleId + ' is not on the Sales tab. Nothing was changed.');
+    if (hits.length > 1) throw new Error('Direct sale ' + saleId + ' is on more than one Sales row. Nothing was changed.');
+    var row = hits[0];
+    var cur = sales.getRange(row, 1, 1, Math.max(6, SALES.batchCol)).getValues()[0];
+    if (String(cur[SALES.batchCol - 1] || '').trim() !== saleId) throw new Error('That Sales row is not ' + saleId + '. Nothing was changed.');
+    var nos = goldApiDirectNos_(saleId);
+    var arch = ar ? goldApiArchiveDirect_(ar, saleId) : [];
+    var parsed = goldApiArchNos_(arch);
+    var archOk = arch.length && !parsed.dup && goldApiSameNos_(parsed.nos, nos.slice().sort(function (a, b) { return a - b; }));
+    var pure = archOk ? goldApiPureFromArchive_(arch) : null;
+    if (pure === null && cur[1] !== '' && cur[1] !== null && cur[3] !== '' && cur[3] !== null && Number(cur[1]) > 0) pure = Number(cur[3]) / Number(cur[1]);
+    var base = sellBase === '' ? '' : Number(sellBase);
+    var baseSame = base === '' ? (cur[1] === '' || cur[1] === null) : Number(cur[1]) === base;
+    if (base !== '' && pure === null && !baseSame) throw new Error('The original purity for ' + saleId + ' is not available, so a new base cannot be valued. Nothing was changed.');
+    var est = base === '' ? '' : round2_(pure * base);
+    var actual = amt === '' ? est : Number(amt);
+    if (actual === '' || actual === null || !isFinite(Number(actual))) throw new Error('Enter the sell base or the amount received. Nothing was changed.');
+    var snap = cur.slice();
+    var dateSnap = archOk ? arch.map(function (a) { return { row: a.row, date: a.r[11] }; }) : [];
+    var wroteSale = false, wroteDates = false;
+    try {
+      sales.getRange(row, 1, 1, 6).setValues([[sellDate, base, cur[2], est, cur[4], actual]]);
+      wroteSale = true;
+      if (archOk) {
+        dateSnap.forEach(function (d) { ar.getRange(d.row, 12).setValue(sellDate); });
+        wroteDates = true;
+      }
+      SpreadsheetApp.flush();
+      if (String(sales.getRange(row, SALES.batchCol).getValue() || '').trim() !== saleId)
+        throw new Error('The sale id changed while it was being corrected.');
+    } catch (err) {
+      try {
+        if (wroteSale) goldApiWriteSaleSnap_(sales, row, snap);
+        if (wroteDates) dateSnap.forEach(function (d) { ar.getRange(d.row, 12).setValue(d.date === undefined || d.date === null ? '' : d.date); });
+        SpreadsheetApp.flush();
+      } catch (e2) {
+        throw new Error((err && err.message ? err.message : String(err)) + ' (undoing the correction also failed: ' + e2.message + ')');
+      }
+      var msg = err && err.message ? err.message : String(err);
+      if (!/Nothing was changed/.test(msg)) msg += ' Nothing was changed.';
+      throw new Error(msg);
+    }
+    return { message: 'Direct sale ' + saleId + ' updated. Profit ' + goldApiPeso_(Number(actual) - Number(cur[4] || 0)) + '.', saleId: saleId, nos: nos };
+  });
+}
+function goldApiUndoDirectSale_(req) {
+  var saleId = String(req.saleId || '').trim();
+  if (!directSaleId_(saleId)) throw new Error('That is not a direct sale. Nothing was undone.');
+  var nos = goldApiDirectNos_(saleId).slice().sort(function (a, b) { return a - b; });
+  var ss = SpreadsheetApp.getActive();
+  var sales = ss.getSheetByName(SALES.sheet), pur = ss.getSheetByName(PURCHASES.sheet), ar = ss.getSheetByName(ARCHIVE.sheet);
+  if (!sales || !pur || !ar) throw new Error('Sales, Purchases or Archive was not found. Nothing was undone.');
+  return goldApiWithOwnLock_(30000, function () {
+    var hits = goldApiSaleHits_(sales, saleId);
+    var arch = goldApiArchiveDirect_(ar, saleId);
+    if (hits.length > 1) throw new Error('Direct sale ' + saleId + ' is on more than one Sales row. Nothing was undone.');
+    if (!hits.length && !arch.length) return { message: 'Direct sale ' + saleId + ' is already undone. Nothing was changed.', saleId: saleId, nos: nos, already: true };
+    if (!arch.length) throw new Error('The original items for ' + saleId + ' are not on Archive, so they cannot be put back. Nothing was undone.');
+    var parsed = goldApiArchNos_(arch);
+    if (parsed.dup || !goldApiSameNos_(parsed.nos, nos)) throw new Error('Archive items for ' + saleId + ' do not match the sale (' + parsed.nos.join(', ') + '). Nothing was undone.');
+    var already = goldApiPurchaseHitNos_(pur, nos);
+    if (already.length) throw new Error('Item No. ' + already.join(', ') + ' is already on Purchases. Nothing was undone.');
+    var saleRow = hits.length ? hits[0] : 0;
+    var saleSnap = saleRow ? sales.getRange(saleRow, 1, 1, Math.max(6, SALES.batchCol)).getValues()[0] : null;
+    if (saleSnap && String(saleSnap[SALES.batchCol - 1] || '').trim() !== saleId) throw new Error('That Sales row is not ' + saleId + '. Nothing was undone.');
+    var picked = goldApiPickedFromArchive_(arch);
+    var restored = false, clearedArch = false, clearedSale = false;
+    var fail = function (err) {
+      try {
+        if (clearedSale && saleRow) goldApiWriteSaleSnap_(sales, saleRow, saleSnap);
+        if (clearedArch) goldApiWriteArchiveRows_(ar, arch);
+        if (restored) goldApiDeleteNos_(pur, nos);
+        SpreadsheetApp.flush();
+      } catch (e2) {
+        throw new Error((err && err.message ? err.message : String(err)) + ' (undoing the undo also failed: ' + e2.message + ')');
+      }
+      var msg = err && err.message ? err.message : String(err);
+      if (!/Nothing was undone/.test(msg)) msg += ' Nothing was undone.';
+      throw new Error(msg);
+    };
+    try {
+      restored = true;
+      goldApiRestoreDirect_(pur, picked);
+      if (!goldApiDirectBackOk_(pur, picked)) throw new Error('The restored items did not match the archive.');
+      clearedArch = true;
+      goldApiClearArchiveRows_(ar, arch);
+      SpreadsheetApp.flush();
+      if (goldApiArchiveDirect_(ar, saleId).length) throw new Error('Archive still has ' + saleId + '.');
+      if (saleRow) {
+        clearedSale = true;
+        goldApiBlankSaleRow_(sales, saleRow);
+        SpreadsheetApp.flush();
+        if (String(sales.getRange(saleRow, SALES.batchCol).getValue() || '').trim() === saleId) throw new Error('The Sales row was still there.');
+      }
+    } catch (err) { fail(err); }
+    return { message: 'Direct sale ' + saleId + ' undone. ' + nos.length + ' item' + (nos.length === 1 ? ' is' : 's are') + ' In stock again.', saleId: saleId, nos: nos };
+  });
+}
+
 // ---------- Write actions ----------
 function goldApiWrite_(action, req) {
   switch (action) {
@@ -723,6 +956,8 @@ function goldApiWrite_(action, req) {
     case 'undoLastBatch': return goldApiUndoLastBatch_(req);     // v11
     case 'sellStock': return goldApiSellStock_(req);            // v51
     case 'sellBatches': return goldApiSellBatches_(req);        // v51 group of refining batches
+    case 'correctDirectSale': return goldApiCorrectDirectSale_(req); // v55
+    case 'undoDirectSale': return goldApiUndoDirectSale_(req);       // v55
     case 'addSale': {
       goldApiAddSale_({ date: req.date || '', base: req.base, grams: req.grams, estValue: req.estValue, cost: req.cost, actual: req.actual });
       var prof = toNumber_(req.actual, 'Actual received') - toNumber_(req.cost, 'Cost');

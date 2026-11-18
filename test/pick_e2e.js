@@ -59,7 +59,7 @@ async function drain(page, ms) {
   {
     const be = makeBackend(); holder.cur = be; SEED.forEach(x => be.add({ weightBhy: x[0], purity: x[1], cost: x[2] }));
     const { browser, page } = await open(srv, be);
-    ok(await page.evaluate(() => window.__goldOutbox.meta().version === 54), 'A: app sees version 54');
+    ok(await page.evaluate(() => window.__goldOutbox.meta().version === 55), 'A: app sees version 55');
     await page.click('nav button[data-v=stock]'); await page.waitForTimeout(200);
     ok((await page.textContent('#refineBtn')).trim() === '🔥 Batch refine…', 'A: button reads "Batch refine…" (not "all N items")');
     await openModal(page);

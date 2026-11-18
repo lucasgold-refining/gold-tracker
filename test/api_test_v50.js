@@ -42,13 +42,13 @@ const arcNos = B => B.env.sheets.Archive.d.slice(1).filter(r => r[0] !== '' && r
 {
   const B = boot(); seed(B);
   const ping = B.post({ action: 'ping' });
-  ok(ping.version === 54 && ping.receipts === true && ping.pickRefine === true, 'ping: version 50, receipts, pickRefine');
+  ok(ping.version === 55 && ping.receipts === true && ping.pickRefine === true, 'ping: version 50, receipts, pickRefine');
   const s = B.post({ action: 'getState' });
-  ok(s.state.version === 54 && s.state.pickRefine === true, 'getState carries pickRefine');
+  ok(s.state.version === 55 && s.state.pickRefine === true, 'getState carries pickRefine');
   const gs = B.post({ action: 'getSettings' });
-  ok(gs.pickRefine === true && gs.version === 54, 'getSettings carries pickRefine');
+  ok(gs.pickRefine === true && gs.version === 55, 'getSettings carries pickRefine');
   const pv = B.post({ action: 'batchPreview' });
-  ok(pv.ok && pv.pickRefine === true && pv.version === 54, 'batchPreview answer stamped (pickRefine)');
+  ok(pv.ok && pv.pickRefine === true && pv.version === 55, 'batchPreview answer stamped (pickRefine)');
   const it = pv.preview.items || [];
   ok(it.length === 5 && it.map(x => x.no).join() === '1,2,3,4,5' && it.map(x => x.bno).join() === '1,2,3,4,5', 'batchPreview.items lists the 5 In stock items with No. and Batch #');
   ok(it[2].weightBhy === 3 && Math.abs(it[2].purity - 0.999) < 1e-9 && it[2].cost === 12500 && it[2].date === '2026-11-17', 'batchPreview item fields (weight, purity, cost, date)');

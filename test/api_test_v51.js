@@ -49,11 +49,11 @@ const sell = (B, o) => B.post(Object.assign({ action: 'sellStock', rid: B.rid(),
 {
   const B = boot(); seed(B);
   const ping = B.post({ action: 'ping' });
-  ok(ping.version === 54 && ping.receipts === true && ping.pickRefine === true && ping.directSale === true, 'ping: version 51, receipts, pickRefine, directSale');
+  ok(ping.version === 55 && ping.receipts === true && ping.pickRefine === true && ping.directSale === true, 'ping: version 51, receipts, pickRefine, directSale');
   const s = B.st();
-  ok(s.version === 54 && s.directSale === true && s.pickRefine === true, 'getState carries directSale and pickRefine');
+  ok(s.version === 55 && s.directSale === true && s.pickRefine === true, 'getState carries directSale and pickRefine');
   const gs = B.post({ action: 'getSettings' });
-  ok(gs.directSale === true && gs.version === 54, 'getSettings carries directSale');
+  ok(gs.directSale === true && gs.version === 55, 'getSettings carries directSale');
 }
 
 // ===== 2) one eligible item: accounting, no fee, no batch, leftovers untouched

@@ -46,7 +46,7 @@ function logRows(env) {
 {
   const { post, env, ctx } = boot();
   const ping = post({ action: 'ping' });
-  ok(ping.version === 54 && ping.receipts === true, 'ping exposes version 50 and receipts:true');
+  ok(ping.version === 55 && ping.receipts === true, 'ping exposes version 50 and receipts:true');
   ok(!env.sheets.ApiLog, 'ApiLog is not created until a write (no manual setup)');
   const r1 = post({ action: 'addPurchase', rid: 'rid-p1', lite: true, date: '2026-11-13', weightBhy: 2.5, purity: 0.871, cost: 8875 });
   ok(r1.ok && r1.receipts === true && r1.no > 0 && !r1.duplicate, 'first purchase writes and returns receipts + no (' + r1.no + ')');
@@ -134,13 +134,13 @@ function logRows(env) {
 {
   const { post, env } = boot();
   const a = post({ action: 'addPurchase', rid: 'v13c-1', lite: true, date: '2026-11-13', weightBhy: 3, purity: 0.9, cost: 2000 });
-  ok(a.ok && a.message && a.no && a.version === 54, 'v13-style lite addPurchase still has ok/message/no');
+  ok(a.ok && a.message && a.no && a.version === 55, 'v13-style lite addPurchase still has ok/message/no');
   const again = post({ action: 'addPurchase', rid: 'v13c-1', lite: true, date: '2026-11-13', weightBhy: 3, purity: 0.9, cost: 2000 });
   ok(again.ok && again.no === a.no && again.duplicate, 'v13-style retry is still idempotent (duplicate + same no)');
   const st = post({ action: 'getState' });
   ok(st.ok && st.state && st.state.stock, 'v13-style getState still returns {ok, state}');
   const full = post({ action: 'addPurchase', rid: 'v13c-2', date: '2026-11-13', weightBhy: 1, purity: 0.85, cost: 800 });
-  ok(full.ok && full.state && full.state.version === 54 && full.message, 'non-lite write still returns state (v13 clients refresh from it)');
+  ok(full.ok && full.state && full.state.version === 55 && full.message, 'non-lite write still returns state (v13 clients refresh from it)');
 }
 
 // --- editPurchase receipt: already-done retry does not change the row twice ---

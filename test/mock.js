@@ -72,7 +72,10 @@ function build(opts) {
       const mine = items.filter(x => x[0] === id);
       const raw = mine.reduce((t, x) => t + x[7], 0), refg = mine.reduce((t, x) => t + x[8], 0);
       r[15] = mine.length; r[16] = raw; r[17] = refg; r[18] = raw ? refg / raw : 0; r[19] = mine.reduce((t, x) => t + x[5], 0) + N('RefiningFee');
-      r[20] = mine.reduce((t, x) => t + x[9], 0); r[21] = r[20] - r[19]; r[22] = (refg * r[18] / N('SilverDivisor')) * N('SilverMultiplier') - refg;
+      r[20] = mine.reduce((t, x) => t + x[9], 0); r[21] = r[20] - r[19];
+      const full = N('FullBaseMinPurity') || 0.998, below = mine.filter(x => !(Number(x[4]) + 1e-9 >= full));
+      const sRaw = below.reduce((t, x) => t + (Number(x[7]) || 0), 0), sRef = below.reduce((t, x) => t + (Number(x[8]) || 0), 0);
+      r[22] = sRaw && sRef ? (sRef * (sRef / sRaw) / N('SilverDivisor')) * N('SilverMultiplier') - sRef : 0;
       r[26] = !blank(r[25]) ? r[25] : (!blank(r[24]) ? refg * r[24] : ''); r[27] = r[26] === '' ? '' : r[26] - r[19]; } });
   ref.d[17] = ['Batch', 'Batch date', 'Item No.', 'Weight (BHY)', 'Purity %', 'Cost (PHP)', 'Base / gram at close', 'Grams', 'Refined grams', 'Value', 'Profit', '', 'Batch', 'Batch date', 'Base', 'Items', 'Raw grams', 'Refined grams', 'Raw %', 'Cost incl. fee', 'Est. value', 'Est. profit', 'Silver', 'Sell date', 'Sell base / gram', 'Actual amount received', 'Actual value', 'Actual profit', 'Recorded in Sales'];
   // existing batch R-20261018 with 3 items (keeps the test small)

@@ -28,14 +28,14 @@ async function metrics(page, listSel) {
       const c = cb.getBoundingClientRect(), b = body.getBoundingClientRect(), r = l.getBoundingClientRect();
       out.rows.push({ h: r.height, cbMid: c.top + c.height / 2, bodyTop: b.top, bodyBot: b.bottom, gap: b.left - c.right, right: r.right });
     });
-    ['#sellBtn', '#sellRefBtn', '#dsAll', '#dsNext', '#dsGo', '#bgAll', '#bgNext', '#bgGo', '#sd', '#sb', '#sa', '.mobile-only button.sell', '.modal .btn.light'].forEach(s => {
+    ['#sellBtn', '#sellRefBtn', '#gpAll', '#gpGo', '#gpid', '#bgAll', '#bgNext', '#bgGo', '#sd', '#sb', '#sa', '.modal .btn.light'].forEach(s => {
       document.querySelectorAll(s).forEach(e => {
         const b = e.getBoundingClientRect();
         if (b.width < 1 || b.height < 1) return;
         out.taps.push({ sel: s, h: b.height, w: b.width });
       });
     });
-    document.querySelectorAll('#dsFigs > div').forEach(d => {
+    document.querySelectorAll('#gpFigs > div, #bgFigs > div').forEach(d => {
       const b = d.querySelector('b'); if (!b) return; const r = d.getBoundingClientRect(), bb = b.getBoundingClientRect();
       out.figs.push({ t: d.textContent.replace(/\s+/g, ' ').trim(), wrapB: b.getClientRects().length > 1, out: bb.right > r.right + 1 });
     });
@@ -84,29 +84,29 @@ function checkFigs(m, tag) {
     for (const s of [100, 130]) {
       await zoom(page, s);
       await page.click('nav button[data-v=stock]'); await page.waitForTimeout(250); await quiet(page);
-      const stock = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: innerWidth, sells: [...document.querySelectorAll('.mobile-only button.sell')].map(b => b.getBoundingClientRect().height) }));
+      const stock = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: innerWidth, sells: document.querySelectorAll('button.sell').length, label: document.querySelector('#sellBtn') ? document.querySelector('#sellBtn').textContent.trim() : '' }));
       ok(stock.scroll <= stock.inner + 1, `phone stock @${s}%: no horizontal scroll (${stock.scroll}/${stock.inner})`);
-      ok(stock.sells.length === 3 && stock.sells.every(h => h >= 44), `phone stock @${s}%: three Sell buttons ≥44px (${stock.sells.map(h => h.toFixed(0)).join(',')})`);
-      const sellBtn = await page.$eval('#sellBtn', b => b.getBoundingClientRect());
-      ok(sellBtn.height >= 44 && sellBtn.width >= 44, `phone stock @${s}%: group button ${sellBtn.width.toFixed(0)}x${sellBtn.height.toFixed(0)}`);
+      ok(stock.sells === 0, `phone stock @${s}%: no per-item Sell button`);
+      ok(stock.label === 'Group 99.8%…', `phone stock @${s}%: button label (${stock.label})`);
+      const sellBtn = await page.$eval('#sellBtn', b => ({ h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width, fit: b.scrollWidth <= b.clientWidth + 1 }));
+      ok(sellBtn.h >= 44 && sellBtn.w >= 44 && sellBtn.fit, `phone stock @${s}%: group button ${sellBtn.w.toFixed(0)}x${sellBtn.h.toFixed(0)} fits`);
       await shot(page, `phone-stock-sell-${s}`);
-      await page.click('#sellBtn'); await page.waitForSelector('#dsList'); await quiet(page);
-      let m = await metrics(page, '#dsList'); checkList(m, `phone picker empty @${s}%`); checkTaps(m, `phone picker empty @${s}%`);
-      ok(await page.$eval('#dsNext', b => b.disabled), `phone picker @${s}%: Review stays disabled with nothing ticked`);
+      await page.click('#sellBtn'); await page.waitForSelector('#gpList'); await quiet(page);
+      let m = await metrics(page, '#gpList'); checkList(m, `phone picker empty @${s}%`); checkTaps(m, `phone picker empty @${s}%`);
+      ok(await page.$eval('#gpGo', b => b.disabled), `phone picker @${s}%: Group stays disabled with nothing ticked`);
       await shot(page, `phone-sell-picker-empty-${s}`);
-      await page.click('#dsList input[data-no="1"]'); await quiet(page);
-      m = await metrics(page, '#dsList'); checkList(m, `phone picker one @${s}%`);
+      await page.click('#gpList input[data-no="1"]'); await quiet(page);
+      m = await metrics(page, '#gpList'); checkList(m, `phone picker one @${s}%`);
       await shot(page, `phone-sell-picker-one-${s}`);
-      await page.click('#dsAll'); await quiet(page);
-      m = await metrics(page, '#dsList'); checkList(m, `phone picker all @${s}%`); checkTaps(m, `phone picker all @${s}%`);
+      await page.click('#gpAll'); await quiet(page);
+      m = await metrics(page, '#gpList'); checkList(m, `phone picker all @${s}%`); checkTaps(m, `phone picker all @${s}%`);
       await shot(page, `phone-sell-picker-all-${s}`);
-      await page.click('#dsNext'); await page.waitForSelector('#dsGo'); await quiet(page);
-      await page.fill('#sa', '9999999.99'); await page.evaluate(() => document.querySelector('#sa').blur());
-      m = await metrics(page, '#dsReview'); checkFigs(m, `phone review @${s}%`); checkTaps(m, `phone review @${s}%`);
-      ok(!m.overflow && !m.sheetOverflow, `phone review @${s}%: no horizontal scroll`);
-      await page.evaluate(() => document.querySelector('#dsGo').scrollIntoView({ block: 'center' }));
-      const vis = await page.evaluate(() => { const b = document.querySelector('#dsGo').getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight + 1 && b.left >= 0 && b.right <= innerWidth + 1 && b.height >= 44; });
-      ok(vis, `phone review @${s}%: Record sale is on screen and at least 44px`);
+      m = await metrics(page, '#gpList'); checkFigs(m, `phone group totals @${s}%`); checkTaps(m, `phone group totals @${s}%`);
+      ok(!m.overflow && !m.sheetOverflow, `phone group totals @${s}%: no horizontal scroll`);
+      ok(!/fee/i.test(await page.textContent('#gpFigs')), `phone group totals @${s}%: fee is not its own line`);
+      await page.evaluate(() => document.querySelector('#gpGo').scrollIntoView({ block: 'center' }));
+      const vis = await page.evaluate(() => { const b = document.querySelector('#gpGo').getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight + 1 && b.left >= 0 && b.right <= innerWidth + 1 && b.height >= 44; });
+      ok(vis, `phone group @${s}%: Group button is on screen and at least 44px`);
       await shot(page, `phone-sell-review-${s}`);
       await page.evaluate(() => closeModal());
     }
@@ -119,14 +119,16 @@ function checkFigs(m, tag) {
     let ctx = await start(one, phone);
     await ctx.page.click('nav button[data-v=stock]'); await ctx.page.waitForTimeout(200); await quiet(ctx.page);
     await shot(ctx.page, 'phone-stock-single');
-    await ctx.page.click('.mobile-only button.sell'); await ctx.page.waitForSelector('#dsGo'); await quiet(ctx.page);
-    const m = await metrics(ctx.page, '#dsReview'); checkFigs(m, 'phone single review'); checkTaps(m, 'phone single review');
+    ok(!(await ctx.page.$('button.sell')), 'phone single: no per-item Sell button');
+    await ctx.page.click('#sellBtn'); await ctx.page.waitForSelector('#gpList'); await quiet(ctx.page);
+    await ctx.page.click('#gpList input'); await quiet(ctx.page);
+    const m = await metrics(ctx.page, '#gpList'); checkFigs(m, 'phone single group'); checkTaps(m, 'phone single group');
     await shot(ctx.page, 'phone-sell-review-single');
     await ctx.context.close();
     const none = makeBackend(); none.add({ weightBhy: 2, purity: 0.9, cost: 4000 }); none.add({ weightBhy: 1, purity: 0.997999, cost: 3000 });
     ctx = await start(none, phone);
     await ctx.page.click('nav button[data-v=stock]'); await ctx.page.waitForTimeout(200); await quiet(ctx.page);
-    ok(!(await ctx.page.$('#sellBtn')) && !(await ctx.page.$('button.sell')), 'phone empty: no sell action when nothing is actually 99.8%');
+    ok(!(await ctx.page.$('#sellBtn')) && !(await ctx.page.$('button.sell')), 'phone empty: no group action when nothing is actually 99.8%');
     await shot(ctx.page, 'phone-stock-none-eligible');
     await ctx.context.close();
   }
@@ -139,15 +141,15 @@ function checkFigs(m, tag) {
     const stock = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: innerWidth }));
     ok(stock.scroll <= stock.inner + 1, `laptop stock: no horizontal scroll (${stock.scroll}/${stock.inner})`);
     await shot(page, 'laptop-stock-sell');
-    await page.click('#sellBtn'); await page.waitForSelector('#dsList'); await quiet(page);
-    await page.click('#dsList input[data-no="1"]'); await page.click('#dsList input[data-no="5"]');
-    let m = await metrics(page, '#dsList'); checkList(m, 'laptop picker'); checkTaps(m, 'laptop picker');
+    ok((await page.textContent('#sellBtn')).trim() === 'Group 99.8%…', 'laptop stock: Group 99.8% label');
+    await page.click('#sellBtn'); await page.waitForSelector('#gpList'); await quiet(page);
+    await page.click('#gpList input[data-no="1"]'); await page.click('#gpList input[data-no="5"]');
+    let m = await metrics(page, '#gpList'); checkList(m, 'laptop picker'); checkTaps(m, 'laptop picker');
     await shot(page, 'laptop-sell-picker');
-    await page.click('#dsNext'); await page.waitForSelector('#dsGo'); await page.fill('#sa', '2500000'); await page.evaluate(() => document.querySelector('#sa').blur());
-    m = await metrics(page, '#dsReview'); checkFigs(m, 'laptop review'); checkTaps(m, 'laptop review');
-    await page.evaluate(() => document.querySelector('#dsGo').scrollIntoView({ block: 'center' }));
-    const vis = await page.evaluate(() => { const b = document.querySelector('#dsGo').getBoundingClientRect(); return b.bottom <= innerHeight + 1 && b.height >= 44; });
-    ok(vis, 'laptop review: Record sale is reachable');
+    m = await metrics(page, '#gpList'); checkFigs(m, 'laptop group'); checkTaps(m, 'laptop group');
+    await page.evaluate(() => document.querySelector('#gpGo').scrollIntoView({ block: 'center' }));
+    const vis = await page.evaluate(() => { const b = document.querySelector('#gpGo').getBoundingClientRect(); return b.bottom <= innerHeight + 1 && b.height >= 44; });
+    ok(vis, 'laptop group: Group button is reachable');
     await shot(page, 'laptop-sell-review');
     await context.close();
   }

@@ -4,7 +4,7 @@ const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
 let fails = 0, n = 0;
 const ok = (c, m) => { n++; console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 
-ok(/const CACHE = 'gold-tracker-v54'/.test(sw), 'cache name is v54');
+ok(/const CACHE = 'gold-tracker-v55'/.test(sw), 'cache name is v55');
 const nav = sw.split("req.mode === 'navigate'")[1].split('return;')[0];
 ok(/cache:\s*'reload'/.test(nav) && /req\.url/.test(nav), 'navigation fetches the URL with cache reload');
 ok(!/fetch\(req\)/.test(nav), 'the navigation branch does not use the request cache mode');
