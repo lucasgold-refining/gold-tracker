@@ -1,5 +1,5 @@
 // Lucas Gold Tracker service worker. Bump CACHE on every release.
-const CACHE = 'gold-tracker-v52';
+const CACHE = 'gold-tracker-v54';
 const ASSETS = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const NAV_TIMEOUT_MS = 6000;   // weak signal: after this, open the saved copy instead of waiting
 
@@ -22,7 +22,10 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin) return;
   if (req.mode === 'navigate') {
     // Only a good (200) page replaces the saved copy; a 404/500 or a captive-portal page never overwrites it.
-    const net = fetch(req).then(r => keep('./index.html', r));
+    // A navigation Request cannot be copied with a new cache mode (Chrome throws). Fetch the
+    // same URL with cache: 'reload' so an HTTP-cached older index.html is not written over the
+    // fresh copy this install just stored.
+    const net = fetch(req.url, { cache: 'reload', credentials: 'same-origin', redirect: 'follow' }).then(r => keep('./index.html', r));
     const saved = () => caches.match('./index.html');
     e.respondWith(new Promise(resolve => {
       let done = false; const finish = r => { if (!done && r) { done = true; resolve(r); } };
