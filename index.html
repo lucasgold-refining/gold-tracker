@@ -316,6 +316,14 @@ div.bgrp .bglbl{font-size:12px;font-weight:700;color:var(--brown);padding:5px 0 
 .pick.off{opacity:.55;cursor:default}
 .pickhd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px}
 .picksum{position:sticky;bottom:-18px;background:#fff;padding:8px 0 0;font-size:15px;font-weight:700}
+/* v50: Batch refine pick list (own scroll so the totals and the button stay close) */
+.rpick{max-height:min(42vh,360px);overflow:auto;border:1px solid var(--line);border-radius:12px;padding:0 10px;margin-top:6px;overscroll-behavior:contain}
+.rpick .pick{min-height:46px;box-sizing:border-box}
+.rpick .pick:last-child{border-bottom:0}
+.rpick .pick input:disabled{opacity:.9}
+.rpsum{font-size:15px;font-weight:700;margin-top:8px}
+.rpnote{margin-top:6px;font-size:13px}
+#rpFigs div{gap:10px}
 .bwarn{margin:10px 0 0;padding:8px 10px;border-radius:10px;background:#fff4d6;color:#6b4800;border:1px solid var(--goldline);font-size:14px;font-weight:600}
 .tiles{display:grid;grid-template-columns:1fr;gap:12px}
 .tile{background:#fff;border-radius:14px;padding:16px;border:1px solid #efe9da;border-left:6px solid var(--gold);box-shadow:0 1px 3px rgba(0,0,0,.06)}
@@ -513,7 +521,7 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
@@ -729,6 +737,10 @@ function applyServerCaps(target, j) {
   if (Object.prototype.hasOwnProperty.call(j, 'receipts')) target.receipts = !!j.receipts;
   else if (j.state && Object.prototype.hasOwnProperty.call(j.state, 'receipts')) target.receipts = !!j.state.receipts;
   else if (ver > 0) target.receipts = ver >= 14;
+  // v50: Api.gs v50 (same number as the app from this release) can refine only the ticked items (batchRefine pickNos). Trust a rollback too.
+  if (Object.prototype.hasOwnProperty.call(j, 'pickRefine')) target.pickRefine = !!j.pickRefine;
+  else if (j.state && Object.prototype.hasOwnProperty.call(j.state, 'pickRefine')) target.pickRefine = !!j.state.pickRefine;
+  else if (ver > 0) target.pickRefine = ver >= 50;   // Api.gs went 15 -> 50: a v15 sheet is old
 }
 function noteCaps(j, opt) {
   if (!j) return;
@@ -847,6 +859,7 @@ const salesQ = () => Q.filter(x => isSale(x) || isOtherSale(x));
 const estQ = () => Q.filter(isEst);
 const unsyncedPurchases = () => purchasesQ();
 const hasReceipts = () => !!(ST && (ST.receipts === true || Number(ST.version) >= 14));
+const hasPickRefine = () => !!(ST && hasReceipts() && (ST.pickRefine === true || (ST.pickRefine == null && Number(ST.version) >= 50)));   // Api.gs v50
 const canQueue = action => action === 'addPurchase' || action === 'recordBatchSale' || action === 'setBatchEstimate' || (hasReceipts() && Q_ACTIONS[action] && action !== 'undoLastBatch');
 let syncedNo = {};   // rid -> sheet No. of a purchase that just synced (dependents)
 let Q = [], syncing = false, inflight = '';
@@ -1000,6 +1013,7 @@ function stockMatch(it) {
     && Math.abs((x.purity || 0) - it.purity) < 1e-7 && Math.abs((x.cost || 0) - it.cost) < 0.005);
 }
 function bindingHoldTxt() { return 'These waiting items are for a different Gold Tracker sheet than the one in Settings. Export them, or delete them, then try again.'; }
+function pickHoldTxt() { return 'This refine is for the items you ticked. It needs Api.gs v50 on the sheet. It will stay here until that script is deployed, or delete it and refine again.'; }
 function v13HoldTxt() { return 'This action needs Api.gs v14 on the sheet (durable receipts). It will stay here until that script is deployed, or delete it and do it when you have internet.'; }
 function conflictHold(msg) {
   return /stock changed|no longer In stock|already exists|already sold|not found|cannot go back|Nothing was refined|can no longer be changed|is not on the sheet|only item in batch/i.test(String(msg || ''));
@@ -1054,6 +1068,7 @@ async function syncQueue(opt) {
       if (!it) break;
       const r0 = it.rid;
       if (isV48Action(it) && !hasReceipts()) { await qUpdate(r0, x => { x.hold = v13HoldTxt(); }); tried.add(r0); continue; }
+      if (isRefine(it) && it.pick && !hasPickRefine()) { await qUpdate(r0, x => { x.hold = pickHoldTxt(); }); tried.add(r0); continue; }
       if (waitingOn(it).length) { tried.add(r0); waited = true; continue; }
       tried.add(r0);
       // v13/Phase 1: after a long uncertain wait, hold if a matching stock/sale row may already exist.
@@ -1110,7 +1125,10 @@ async function syncQueue(opt) {
           j = await api('removeFromBatch', { batchId: it.batchId, no: it.no }, true, { rid: it.rid, timeout: 45000 });
           if (j.state) gotState = true;
         } else if (isRefine(it)) {
-          j = await api('batchRefine', { batchId: it.batchId || '', expectNos: resolveNos(it) }, true, { rid: it.rid, timeout: 60000 });
+          // v50: a ticked-items refine sends pickNos; expectNos = the same list, so an older sheet (v15) refuses
+          // instead of refining everything.
+          const nos = resolveNos(it);
+          j = await api('batchRefine', it.pick ? { batchId: it.batchId || '', pickNos: nos, expectNos: nos } : { batchId: it.batchId || '', expectNos: nos }, true, { rid: it.rid, timeout: 60000 });
           if (j.state) gotState = true;
         } else {
           await qUpdate(r0, x => { x.error = 'Unknown waiting action.'; });
@@ -1985,7 +2003,7 @@ function qMiscRowHTML(it) {
   else if (isDel(it)) { title = '<span class="qkind">Delete</span>#' + esc(it.no); detail = 'Will be removed from Purchases when this syncs.'; }
   else if (isAddTo(it)) { title = '<span class="qkind">Add to</span><span class="qid">' + esc(it.batchId) + '</span>'; detail = (resolveNos(it).length ? resolveNos(it).map(n => '#' + n).join(', ') : 'items') + (wait ? ' · waiting for a purchase to get a No.' : ''); }
   else if (isRemove(it)) { title = '<span class="qkind">Remove</span>#' + esc(it.no); detail = 'Out of ' + esc(it.batchId); }
-  else if (isRefine(it)) { title = '<span class="qkind">Refine</span><span class="qid">' + esc(it.batchId || 'new batch') + '</span>'; const n = resolveNos(it).length + wait; detail = (n ? n + ' item' + (n === 1 ? '' : 's') : 'In stock items') + (wait ? ' · waiting for purchases to get a No.' : ''); }
+  else if (isRefine(it)) { title = '<span class="qkind">Refine</span><span class="qid">' + esc(it.batchId || 'new batch') + '</span>'; const n = resolveNos(it).length + wait; detail = (n ? n + ' item' + (n === 1 ? '' : 's') + (it.pick ? ' ticked' : '') : 'In stock items') + (wait ? ' · waiting for purchases to get a No.' : ''); }
   else { title = esc(qKindLabel(it)); detail = ''; }
   return `<div class="item q${!it.error && !it.hold ? ' pend' : ''}" data-rid="${esc(it.rid)}"><span class="no"><span aria-hidden="true">${it.error ? '⚠️' : '⏳'}</span></span><div class="body"><b>${title}</b> ${qBadge(it)}<br>
     <span class="muted">${detail}${busyNow && !liveSync() ? ' · sending…' : ''}</span>
@@ -2008,7 +2026,7 @@ function refineBtnHTML(n) {
     if (u) { why = `Wait until the ${u} unsynced purchase${u === 1 ? ' is' : 's are'} in the sheet so the batch doesn't miss ${u === 1 ? 'it' : 'them'}.`; disable = true; }
     else if (off) { why = navigator.onLine ? "Can't reach the sheet. Batch refine needs internet." : "You're offline. Batch refine needs internet."; disable = true; }
   }
-  return `<button class="btn gold" id="refineBtn" style="margin:0 0 12px" onclick="openRefine()"${disable ? ' disabled' : ''}>🔥 Batch refine all ${n} items</button>${why ? `<div class="note" id="refineNote">${esc(why)}</div>` : ''}`;
+  return `<button class="btn gold" id="refineBtn" style="margin:0 0 12px" onclick="openRefine()"${disable ? ' disabled' : ''}>🔥 Batch refine…</button>${why ? `<div class="note" id="refineNote">${esc(why)}</div>` : ''}`;
 }
 // v33: purchases saved together (one batch "Save all", Api.gs v10 qid) sit together in a box, at the first one's place.
 // Old rows, rows typed in the sheet and single saves have no qid and stay on their own. Returns [{ qid, rows }]
@@ -2023,8 +2041,9 @@ function stockGroups(L, P) {
 }
 const grpLbl = n => `Bought together · ${n} items`;
 // ---------- v35: In stock filter (purity exact / range, amount bought ₱, weight g or BHY) ----------
-// Only what the list shows changes: edit / delete act on the row tapped, Batch refine still takes ALL In stock items
-// (a note says so while a filter hides some), Add from stock (Refining tab) lists every item. Kept until cleared or reload.
+// Only what the list shows changes: edit / delete act on the row tapped, Batch refine lists ALL In stock items
+// (a note says so while a filter hides some; v50 with Api.gs v50 you untick the ones to leave out), Add from stock
+// (Refining tab) lists every item. Kept until cleared or reload.
 const SF0 = { open: false, pm: 'exact', p: '', pmin: '', pmax: '', amin: '', amax: '', wu: 'g', wmin: '', wmax: '' };
 let SF = Object.assign({}, SF0);
 // Purity text -> whole hundredths of a % (85.35 -> 8535) at the typed precision; a 0.xxxx fraction is read as a fraction.
@@ -2103,7 +2122,9 @@ function stockBodyHTML(V) {
   return `${table}<div class="mobile-only">${list}</div>`;
 }
 const stockHeadHTML = V => `<span>In stock <span class="muted" id="stockN">${V.L.length} items${V.P.length ? ` · ${V.P.length} syncing` : ''}${V.on ? ` · ${V.shown} shown` : ''}</span></span>${eyeBtn('stock:list')}`;
-const sfRefNote = V => V.on && V.shown < V.total ? `Batch refine takes all ${V.L.length} In stock items, also the ${V.total - V.shown} the filter hides.` : '';
+const sfRefNote = V => !(V.on && V.shown < V.total) ? '' : hasPickRefine()
+  ? `Batch refine lists all ${V.L.length} In stock items ticked, also the ${V.total - V.shown} the filter hides. Untick the ones to leave out.`
+  : `Batch refine takes all ${V.L.length} In stock items, also the ${V.total - V.shown} the filter hides.`;
 function stockHTML() {
   const V = stockView(), { L, P } = V;
   if (!L.length && !P.length) return queueHTML(P) + `<div class="card empty">No items in stock${unsyncedPurchases().length ? ' in the sheet yet' : ''}.<br><button class="btn gold" onclick="go('buy')">＋ Add a purchase</button></div>`;
@@ -2191,37 +2212,95 @@ async function openRefine() {
   } else p = localRefinePreview();
   render();
   if (!p || !p.count && !u.length) return toast('No items in stock');
-  const count = (p.count || 0) + (hasReceipts() ? u.length : 0);
-  const waitNote = hasReceipts() && u.length ? `<div class="muted">This will wait for ${u.length} unsynced purchase${u.length === 1 ? '' : 's'} to reach the sheet first, then refine all ${count} items together.</div>` : '';
+  // v50: the list. Api.gs v50 sends the In stock items with the preview (fresh); else the stock this device has.
+  const pick = hasPickRefine(), pend = hasReceipts() ? u : [];
+  const L = (Array.isArray(p.items) ? p.items : (ST && ST.stock || [])).slice()
+    .sort((a, b) => (a.no == null) - (b.no == null) || (a.no || 0) - (b.no || 0));
+  const noNo = L.filter(it => !(Number(it.no) > 0)).length;
+  const count = (p.count || 0) + pend.length;
+  const rows = L.map((it, i) => { const k = Number(it.no) > 0, on = !pick || k, dis = !pick || !k;
+      return `<label class="pick${k || !pick ? '' : ' off'}"><input type="checkbox" data-i="${i}"${on ? ' checked' : ''}${dis ? ' disabled' : ''} aria-label="Refine ${k ? '#' + esc(dno(it)) : 'item without a No.'}"><span class="body">${k ? pickLine(it) : `<b>No. –</b> · ${wt(it.weightBhy)} BHY · ${pct(it.purity)} · ${peso(it.cost)}`}</span></label>`; }).join('')
+    + pend.map(it => `<label class="pick"><input type="checkbox" data-rid="${esc(it.rid)}" checked${pick ? '' : ' disabled'} aria-label="Refine unsynced purchase"><span class="body">${wt(it.weightBhy)} BHY · ${pct(it.purity)} · ${peso(it.cost)} <span class="badge">waiting to sync</span></span></label>`).join('');
   const offNote = hasReceipts() && !navigator.onLine ? `<div class="muted">You're offline. This refine will be saved on this device and sent when you're back online.</div>` : '';
-  modal(`<h2>🔥 Batch refine?</h2><div class="muted">All ${count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>${waitNote}${offNote}
-    <div class="sumlist">
-      <div><span>Items</span><b>${count}</b></div>
-      <div><span>Raw grams</span><b>${grams(p.rawG)} g</b></div>
-      <div><span>Refined grams (est.)</span><b>${grams(p.refinedG)} g</b></div>
-      <div><span>Cost of items</span><b>${peso(p.cost)}</b></div>
-      <div><span>Refining fee</span><b>${peso(p.fee)}</b></div>
-      <div><span>Cost incl. fee</span><b>${peso(p.costInclFee)}</b></div>
-      <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
-      <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(p.estProfit, 'stock:refine')}</b></div>
-      <div><span>Silver needed${p.silverExcl ? ` <small class="muted rnx">excl. ${p.silverExcl} item${p.silverExcl === 1 ? '' : 's'} ≥ ${fullPctTxt(p.fullMin)}</small>` : ''}</span><b>${grams(p.silverG)} g</b></div>
-    </div>
+  const intro = pick
+    ? `<div class="muted">Tick the items to refine. They move into a new batch, frozen at today's base, and go to the Archive tab. Unticked items stay In stock.</div>`
+    : `<div class="muted">All ${count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>`;
+  modal(`<h2>🔥 Batch refine</h2>${intro}${offNote}
+    <div class="pickhd"><span class="muted" id="rpN">${count} in stock</span>${pick ? '<button type="button" class="btn light sm" id="rpAll">Select none</button>' : ''}</div>
+    ${pick ? '' : `<div class="note rpnote" id="rpOld">Update the sheet script (Api.gs v50) to pick items. Until then Batch refine takes them all.</div>`}
+    <div class="rpick" id="rpList">${rows}</div>
+    ${pick && noNo ? `<div class="muted rpnote" id="rpNoNo">${noNo} item${noNo === 1 ? ' has' : 's have'} no No. on the sheet, so ${noNo === 1 ? 'it stays' : 'they stay'} In stock. Give ${noNo === 1 ? 'it' : 'them'} a No. on the sheet to refine ${noNo === 1 ? 'it' : 'them'} here.</div>` : ''}
+    <div class="rpsum" id="rpSum"></div><div class="muted rpnote" id="rWait"></div>
+    <div class="sumlist" id="rpFigs"></div>
     <label for="rid">Batch ID <span class="hint">leave blank for ${esc(p.defaultBatchId)}</span></label><input id="rid" type="text" placeholder="${esc(p.defaultBatchId)}">
     <button class="btn gold" id="rgo">Refine ${count} items</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const boxes = () => [...document.querySelectorAll('#rpList input:not([disabled])')];
+  const ticked = () => {
+    if (!pick) return { items: L, pend };
+    const on = [...document.querySelectorAll('#rpList input')].filter(x => x.checked);
+    return { items: on.filter(x => x.dataset.i != null).map(x => L[Number(x.dataset.i)]).filter(it => Number(it.no) > 0),
+             pend: on.filter(x => x.dataset.rid).map(x => pend.find(q => q.rid === x.dataset.rid)).filter(Boolean) };
+  };
+  const upd = () => {
+    const T = ticked(), n = T.items.length + T.pend.length;
+    // Standing rule: the refining fee is inside Total cost, never shown on its own (as "If refined now").
+    // Fallback (sheet older than Api.gs v50): the sheet's own preview, as before. v50: the same maths over the ticked items.
+    const f = pick ? refineTotals(T.items.concat(T.pend), p) : p;
+    $('#rpFigs').innerHTML = `<div><span>Items</span><b>${n}</b></div>
+      <div><span>Raw grams</span><b>${grams(f.rawG)} g</b></div>
+      <div><span>Refined grams (est.)</span><b>${grams(f.refinedG)} g</b></div>
+      <div id="rpCost"><span>Total cost</span><b>${peso(f.costInclFee)}</b></div>
+      <div><span>Base frozen for this batch</span><b>${peso(p.base)} / g</b></div>
+      <div class="big"><span>Est. profit ${eyeBtn('stock:refine')}</span><b>${prof(f.estProfit, 'stock:refine')}</b></div>
+      <div><span>Silver needed${f.silverExcl ? ` <small class="muted rnx">excl. ${f.silverExcl} item${f.silverExcl === 1 ? '' : 's'} ≥ ${fullPctTxt(f.fullMin)}</small>` : ''}</span><b>${grams(f.silverG)} g</b></div>`;
+    $('#rpSum').textContent = pick ? (n ? `${n} of ${count} ticked · ${grams(f.refinedG)} g refined (est.)` : 'Nothing ticked') : '';
+    $('#rpN').textContent = pick ? `${count} in stock · ${n} ticked` : `${count} in stock`;
+    const w = T.pend.length;
+    $('#rWait').textContent = w ? `This will wait for the ${w} unsynced purchase${w === 1 ? '' : 's'} to reach the sheet first, then refine ${pick ? 'the' : 'all'} ${n} items together.` : '';
+    const go = $('#rgo'); go.disabled = !n; go.textContent = `Refine ${n} item${n === 1 ? '' : 's'}`;
+    const all = $('#rpAll'); if (all) all.textContent = boxes().length && boxes().every(x => x.checked) ? 'Select none' : 'Select all';
+    applyEye();
+  };
+  if (pick) {
+    $('#rpList').addEventListener('change', upd);
+    $('#rpAll').onclick = () => { const b = boxes(), on = !b.every(x => x.checked); b.forEach(x => { x.checked = on; }); upd(); };
+  }
+  upd();
   $('#rgo').onclick = async () => {
     const uNow = unsyncedPurchases();
     if (!hasReceipts() && uNow.length) { closeModal(); render(); return alert('A purchase is waiting to sync. Sync it first so the batch includes it.'); }
     const batchId = $('#rid').value.trim() || p.defaultBatchId;
+    const T = ticked(); if (pick && !(T.items.length + T.pend.length)) return;
+    const live = new Set(uNow.map(x => x.rid));
+    const nos = pick ? T.items.map(x => Number(x.no)) : (p.nos || []).map(Number).filter(n => n > 0);
+    const waitRids = pick ? T.pend.map(x => x.rid).filter(r => live.has(r)) : uNow.map(x => x.rid);
     if (canQueue('batchRefine')) {
-      const it = { action: 'batchRefine', batchId, expectSheetNos: (p.nos || []).map(Number).filter(n => n > 0), waitRids: uNow.map(x => x.rid) };
+      const it = { action: 'batchRefine', batchId, expectSheetNos: nos.slice().sort((a, b) => a - b), waitRids };
+      if (pick) it.pick = true;
       const ok = await enqueue(it);
       if (!ok) return;
       closeModal(); go('stock'); toast(navigator.onLine ? 'Refine queued. Syncing…' : 'Refine saved offline. Will sync when back online', 4000);
       syncQueue(); return;
     }
-    const r = await write('batchRefine', { batchId: $('#rid').value.trim(), expectNos: p.nos }, $('#rgo'));
+    const r = await write('batchRefine', pick ? { batchId: $('#rid').value.trim(), pickNos: nos, expectNos: nos } : { batchId: $('#rid').value.trim(), expectNos: p.nos }, $('#rgo'));
     if (r) { closeModal(); go('sales'); toast(safeMsg(r.message), 4000); }
   };
+}
+// v50: Batch refine totals for the ticked items: the same maths as the sheet's preview (goldApiBatchPreview_) and
+// "If refined now" (rnTotals). Items: sheet items {weightBhy|grams, purity, cost} and unsynced purchases.
+// p: the preview (base frozen for the batch, fee, 99.8% rule). The fee counts once when anything is ticked.
+function refineTotals(items, p) {
+  const s = S() || {}, bhy = s.bhyPerGram || 2, fm = p && Number(p.fullMin) > 0 ? { fullMin: p.fullMin } : s;
+  const t = items.reduce((a, x) => { const g = hasNum(x.weightBhy) ? Number(x.weightBhy) / bhy : Number(x.grams) || 0, q = Number(x.purity) || 0;
+    a.n++; a.raw += g; a.ref += g * q; a.cost += Number(x.cost) || 0;
+    if (isFullPurity(q, fm)) a.high++; else { a.sRaw += g; a.sRef += g * q; } return a; }, { n: 0, raw: 0, ref: 0, cost: 0, high: 0, sRaw: 0, sRef: 0 });
+  const feeEach = p && Number(p.count) > 0 && p.fee != null ? Number(p.fee) || 0 : Number(s.refiningFee) || 0;
+  const fee = t.n ? feeEach : 0, base = Number(p && p.base) || Number(ST && ST.base) || 0;
+  const div = Number(s.silverDivisor), mul = Number(s.silverMultiplier), rawPct = t.sRaw ? t.sRef / t.sRaw : 0;
+  const silver = div && mul && t.sRef ? (t.sRef * rawPct / div) * mul - t.sRef : 0;
+  const value = base ? t.ref * base : 0;
+  return { count: t.n, rawG: t.raw, refinedG: t.ref, cost: t.cost, fee, costInclFee: t.cost + fee, base, estValue: value,
+           estProfit: value - t.cost - fee, silverG: silver, silverExcl: t.high, fullMin: fm.fullMin };
 }
 function localRefinePreview() {
   const t = rnTotals(), s = S() || {};
