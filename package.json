@@ -1,0 +1,11 @@
+{
+  "name": "gold-tracker",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "shots": "node test/screenshots.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}
