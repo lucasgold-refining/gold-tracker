@@ -45,9 +45,15 @@ header h1{margin:0;font-size:19px;font-weight:800;white-space:nowrap;}
 header h1 span{color:var(--gold2);}
 .basepill{flex:1 1 0;margin-left:auto;text-align:right;line-height:1.15;min-width:0;border:0;background:var(--basepill-bg);color:var(--basepill-fg);border-radius:12px;padding:6px 10px;min-height:46px;cursor:pointer;font:inherit;}
 .basepill:hover{background:var(--chrome-2);}
-.basepill .pen{font-size:12px;margin-left:4px;opacity:.85;}
+.basepill .pen{font-size:12px;margin-left:4px;opacity:.85;flex:0 0 auto;}
 .basepill b{display:block;color:var(--gold2);font-size:17px;white-space:nowrap;}
 .basepill small{color:var(--basepill-muted);font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw;}
+/* v57: price, unit, Offline mark and pencil stay one row; the mark never breaks or clips. */
+.bprow{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%;min-width:0;}
+.bprow .pen{margin-left:0;}
+.basepill .bpunit{font-weight:600;font-size:13px;color:#d8d1bd;}
+.offtag{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;align-self:center;padding:3px 8px;border-radius:999px;background:var(--gold);color:var(--on-gold);font-size:12px;font-weight:800;letter-spacing:.01em;line-height:1.1;white-space:nowrap;}
+.basepill,.bprow,.offtag{overflow:visible;}
 .hbtn{border:0;background:var(--hbtn-bg);color:var(--hbtn-fg);border-radius:12px;min-width:46px;min-height:46px;font-size:20px;cursor:pointer;}
 .hbtn.spin{animation:spin 1s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)};}
@@ -432,8 +438,9 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px;}
   body{padding-left:230px;}
   header{padding:12px 24px;}
   header h1{display:none;}
-  .basepill{margin-left:0;text-align:left;display:flex;gap:14px;align-items:baseline;flex:0 1 auto;padding:6px 14px;}
-  .basepill small{max-width:none;}
+  .basepill{margin-left:0;text-align:left;display:flex;gap:14px;align-items:center;flex:0 1 auto;padding:6px 14px;flex-wrap:nowrap;}
+  .basepill small{max-width:none;flex:0 1 auto;}
+  .bprow{flex:0 0 auto;flex-wrap:nowrap;}
   #refreshBtn{margin-left:auto;}
   nav{top:0;bottom:0;right:auto;width:230px;flex-direction:column;border-top:0;border-right:1px solid var(--chrome-2);background:var(--ink);padding:0 12px 12px;gap:4px;z-index:7;}
   .side-brand{display:block;color:var(--header-fg);font-weight:900;font-size:20px;padding:18px 8px 16px;border-bottom:1px solid var(--chrome-2);margin-bottom:10px;}
@@ -473,9 +480,11 @@ input.basein{font-size:34px;font-weight:900;text-align:center;min-height:74px;}
   /* v21: phone header. The base-price pill gets its own full-width line under the title and buttons, so the amount,
      "/ g base" and the source/updated line always show in full (no ellipsis) on any phone width. */
   #refreshBtn{margin-left:auto;}
-  .basepill{order:8;flex:1 1 100%;margin-left:0;text-align:left;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:10px;row-gap:1px;min-height:44px;padding:5px 12px;}
+  .basepill{order:8;flex:1 1 100%;margin-left:0;text-align:left;display:flex;flex-wrap:wrap;align-items:center;column-gap:10px;row-gap:2px;min-height:44px;padding:5px 12px;overflow:visible;}
   .basepill b{flex:0 0 auto;font-variant-numeric:tabular-nums;}
-  .basepill small{flex:1 1 auto;min-width:0;max-width:none;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}}
+  .bprow{flex:1 1 auto;}
+  .basepill small{flex:1 1 auto;min-width:0;max-width:none;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}
+  .basepill.offline small{flex-basis:100%;}}
 /* v35: In stock filter (collapsible, in the In stock card) */
 .sfilt{border:1.5px solid var(--line);border-radius:12px;margin:0 0 10px;background:var(--box-bg);container-type:inline-size;container-name:sfilt;}
 .sfilt.on{border-color:var(--goldline);background:var(--pending-bg);}
@@ -647,8 +656,8 @@ input:-webkit-autofill,input:-webkit-autofill:focus{-webkit-text-fill-color:var(
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION = 56;
-const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest';
+const APP_VERSION = 57;
+const CFG_KEY = 'gold-tracker-config', CACHE_KEY = 'gold-tracker-state', BQ_KEY = 'gold-tracker-batchquote', Q_KEY = 'gold-tracker-queue', DED_KEY = 'gold-tracker-deduction', LQ_KEY = 'gold-tracker-lastquote', QM_KEY = 'gold-tracker-quotemode', BB_KEY = 'gold-tracker-batchbuy', TM_KEY = 'gold-tracker-tabmask', RN_KEY = 'gold-tracker-sellbase', BE_KEY = 'gold-tracker-batchest', OBP_KEY = 'gold-tracker-offbase';
 const OFFLINE_MSG = "You're offline. This needs internet.";
 const SYNC_EVERY_MS = 60000;
 // The sheet remembers a request ID for 6 hours (Api.gs v2; 10 minutes on v1). After that, a retry of a
@@ -819,6 +828,49 @@ let BQ = (load(BQ_KEY) || []).map(p => { const t = toPurity(pTxt(p) + "%"); retu
 let lastSync = ST && ST._syncedAt ? ST._syncedAt : null, netErr = '', busy = false;
 let netDown = false;                 // last request could not reach the sheet
 const isOffline = () => !navigator.onLine || netDown;
+// v57: a buying base kept on this device only. It never calls setBase and never overwrites the last sheet base.
+function readOffBase() {
+  const v = load(OBP_KEY);
+  const n = v && typeof v === 'object' ? Number(v.base) : NaN;
+  return n >= 1000 && n <= 50000 ? round2(n) : null;
+}
+let OFFBASE = readOffBase();
+let baseTold = 0, baseMsg = '';
+function setOffBase(n) { const base = round2(n); OFFBASE = base; save(OBP_KEY, { base, at: new Date().toISOString() }); }
+function clearOffBase() { OFFBASE = null; try { localStorage.removeItem(OBP_KEY); } catch (e) {} }
+// Mark-to-market base (stock, refining, dashboard). Sheet value stays in ST.base.
+const estBase = () => OFFBASE != null ? OFFBASE : (Number(ST && ST.base) || 0);
+const shownSheetBase = () => {
+  const s = ST && ST.settings;
+  if (s && hasNum(s.base) && Number(s.base) > 0) return Number(s.base);
+  if (ST && hasNum(ST.base) && Number(ST.base) > 0) return Number(ST.base);
+  return null;
+};
+function liveSrcLabel() {
+  const s = String((ST && ST.source) || '').trim();
+  if (/bsp/i.test(s)) return 'BSP';
+  if (/goldprice|gold\s*spot|\bspot\b/i.test(s)) return 'Gold spot';
+  if (/^manual/i.test(s)) return 'Manual';
+  return s || 'sheet';
+}
+function responseHasLiveBase(j) {
+  if (!j) return false;
+  const ok = x => hasNum(x) && Number(x) > 0;
+  if (ok(j.base)) return true;
+  if (j.settings && ok(j.settings.base)) return true;
+  const st = j.state;
+  return !!(st && (ok(st.base) || (st.settings && ok(st.settings.base))));
+}
+// Only a successful online answer that actually carries a base. A timeout or a miss leaves the offline base.
+function adoptLiveBase(j) {
+  if (!navigator.onLine || OFFBASE == null || !responseHasLiveBase(j)) return;
+  const b = shownSheetBase();
+  if (!(b > 0)) return;
+  clearOffBase();
+  baseTold = Date.now();
+  baseMsg = 'Back online · base updated to ' + peso(b) + ' (' + liveSrcLabel() + ')';
+  toast(baseMsg, 4500);
+}
 function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
 // If storage is full, the cached sheet copy (largest, re-downloadable) is dropped to make room; purchases are never lost silently.
 function save(k, v) {
@@ -836,7 +888,8 @@ async function api(action, data, isPost, opt) {
   opt = opt || {};
   if (!connected()) throw new Error('Set up the connection first (⚙️ Settings).');
   if (!navigator.onLine) throw netError(false, false);
-  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), opt.timeout || 45000);
+  const testCap = Number(window.__goldApiTimeout);
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), testCap > 0 ? testCap : (opt.timeout || 45000));
   let r;
   try {
     // v46: every request is POST with the token in the body (never in the URL).
@@ -853,6 +906,7 @@ async function api(action, data, isPost, opt) {
   noteCaps(j, { skipSave: willStore });
   if (j.state) setState(j.state);
   else if (j.settings && ST) applySettings(j);
+  adoptLiveBase(j);   // v57: a real online base replaces a device-only base. Failures never reach here.
   return j;
 }
 // Trust the server's version and receipts, including a rollback (v15 → v13).
@@ -889,6 +943,7 @@ function applySettings(j) {
   if (j.lastUpdated != null) ST.lastUpdated = j.lastUpdated;
   if (j.updateStatus != null) ST.updateStatus = j.updateStatus;
   if (j.settings) ST.settings = Object.assign({}, ST.settings || {}, j.settings);
+  if (j.base != null && ST.settings && !(j.settings && hasNum(j.settings.base))) ST.settings.base = j.base;
   if (j.today) ST.today = j.today;
   if (j.serverTime) ST.serverTime = j.serverTime;
   applyServerCaps(ST, j);
@@ -950,10 +1005,13 @@ function softRender() {
 }
 async function refresh(quiet) {
   if (!connected() || busy) return;
-  busy = true; $('#refreshBtn').classList.add('spin');
+  busy = true; baseMsg = ''; $('#refreshBtn').classList.add('spin');
   try {
     const n = pendingQ().length ? await syncQueue({ noRefresh: true }) : 0;
-    await api('getState'); if (!quiet && !n) toast('Updated from the sheet');   // keep the "Synced N" toast
+    await api('getState');
+    // A queue sync says "Synced…". Coming back online should still say the sheet base took over.
+    if (baseMsg) toast(baseMsg, 4500);
+    else if (!quiet && !n) toast('Updated from the sheet');
     beFlush();   // v22: batch estimates typed while the sheet was out of reach
   }
   catch (e) { if (e.net) { netErr = ''; if (!quiet) toast(navigator.onLine ? e.message : "You're offline. Showing what was saved " + whenTxt(lastSync) + '.', 4000); } else { netErr = e.message; if (!quiet) toast(e.message, 4000); } }
@@ -1537,18 +1595,20 @@ let DED = (() => { const v = Number(load(DED_KEY)); return DED_OPTS.some(x => Ma
 const dedTxt = m => (m * 100).toLocaleString('en-GB') + '%';
 // m = deduction to use (Quote tab: DED; Buy screen hint: the sheet's QuoteMargin, unchanged).
 function quoteFor(p, m) {
-  const s = S(); if (!s || !s.base || p == null || isNaN(p)) return null;
+  const s = S(); if (!s || p == null || isNaN(p)) return null;
+  const base = OFFBASE != null ? OFFBASE : Number(s.base);
+  if (!(base > 0)) return null;
   if (m == null) m = DED;
   const bhy = s.bhyPerGram || 2, full = isFullPurity(p, s);
-  const perGram = full ? s.base : Math.max(0, s.base * (p - m));
+  const perGram = full ? base : Math.max(0, base * (p - m));
   // v27: the per-BHY price is the master (cut to ₱5); per gram is that × BHY per gram, so the two always match.
   const qBhy = floor5(perGram / bhy);
-  return { perGram: qBhy * bhy, perBhy: qBhy, rawGram: perGram, rawBhy: perGram / bhy, refBhy: s.base * p / bhy, full, m };
+  return { perGram: qBhy * bhy, perBhy: qBhy, rawGram: perGram, rawBhy: perGram / bhy, refBhy: base * p / bhy, full, m };
 }
 const ruleTxt = q => { const s = S(); return q.full ? `Full base (${fullPctTxt(s.fullMin)} and up)` : `Base × (purity − ${dedTxt(q.m != null ? q.m : DED)})`; };
 const dedToggleHTML = () => `<div class="seg" role="group" aria-label="Purity deduction" id="dedSeg">${DED_OPTS.map(v =>
   `<button type="button" data-ded="${v}" aria-pressed="${Math.abs(v - DED) < 1e-9}" onclick="setDed(${v})">${dedTxt(v)}</button>`).join('')}</div>`;
-const baseLineHTML = () => { const s = S(); return s ? `Base ${peso(s.base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${dedTxt(DED)}) · 1 g = ${s.bhyPerGram} BHY` : ''; };
+const baseLineHTML = () => { const s = S(); if (!s) return ''; const base = OFFBASE != null ? OFFBASE : s.base; return `Base ${peso(base)} / g · full base at ${pct(s.fullMin)} and up, below that base × (purity − ${dedTxt(DED)}) · 1 g = ${s.bhyPerGram} BHY`; };
 // Quote mode: 'single' (Enter = buy) or 'batch' (Enter = add to batch list). Remembered on this device.
 let QMODE = load(QM_KEY) === 'batch' ? 'batch' : 'single';
 const modeToggleHTML = () => `<div class="seg two2" role="group" aria-label="Quote mode" id="modeSeg">${[['single', 'Single'], ['batch', 'Batch']].map(([m, t]) =>
@@ -1577,8 +1637,21 @@ function focusQuote() { const el = $('#qp'); if (el && matchMedia('(min-width:90
 
 function header() {
   const s = S();
-  $('#basePill').innerHTML = s && s.base ? `<b>${peso(s.base)} <span style="font-weight:600;font-size:13px;color:#d8d1bd">/ g base</span><span class="pen" aria-hidden="true">✏️</span></b><small>${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</small>`
-    : `<b>₱—</b><small>${connected() ? 'Loading…' : 'Not connected'}</small>`;
+  const sheet = s && s.base ? Number(s.base) : null;
+  const b = OFFBASE != null ? OFFBASE : sheet;
+  const pill = $('#basePill');
+  pill.classList.toggle('offline', OFFBASE != null && b != null);
+  if (!(b > 0)) {
+    pill.innerHTML = `<b>₱—</b><small>${connected() ? 'Loading…' : 'Not connected'}</small>`;
+    pill.setAttribute('aria-label', 'Set base price');
+    return;
+  }
+  const tag = OFFBASE != null ? '<span class="offtag" id="offTag">Offline</span>' : '';
+  const sub = OFFBASE != null
+    ? `Sheet ${sheet != null ? peso(sheet) : '–'} · ${esc(srcTxt())}`
+    : `${esc(srcTxt())}${ST && ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}`;
+  pill.innerHTML = `<span class="bprow"><b>${peso(b)} <span class="bpunit">/ g base</span></b>${tag}<span class="pen" aria-hidden="true">✏️</span></span><small>${sub}</small>`;
+  pill.setAttribute('aria-label', OFFBASE != null ? `Set base price, offline base ${peso(b)} per gram` : 'Set base price');
 }
 const isManual = () => !!(ST && /^manual/i.test(String(ST.source || '')));
 const srcTxt = () => isManual() ? 'Manual' : String((ST && ST.source) || '');
@@ -1636,7 +1709,7 @@ function qOutHTML(v) {
     <div class="subs one"><div><small>Per gram</small><b id="qGram">${peso0(q.perGram)}</b></div></div>${offTxt()}
     <button type="button" class="btn buythis" id="qbuy" onclick="quoteToBuy(${p})">🛒 Buy this</button></div>`;
 }
-const offTxt = () => isOffline() ? `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(whenTxt(lastSync))}</div>` : '';
+const offTxt = () => !isOffline() ? '' : OFFBASE != null ? `<div class="offq" id="qOff">Offline base ${peso(OFFBASE)} / g on this device</div>` : `<div class="offq" id="qOff">${navigator.onLine ? 'Not connected' : 'Offline'}, base from ${esc(whenTxt(lastSync))}</div>`;
 function bqHTML() {
   if (!BQ.length) return `<h2>Batch quote</h2><div class="empty">Quoted purities show up here, numbered, so you can read them back to the seller.</div>`;
   const rows = BQ.map((p, i) => { const q = quoteFor(p), x = bqLabel(i); return `<div class="bq"><span class="n">${i + 1}</span><span class="p">${pct(p)}${x ? `<span class="xno">XRF #${esc(x.no)}${x.time ? ' · ' + esc(x.time) : ''}</span>` : ''}</span>
@@ -2219,7 +2292,7 @@ function itemRowHTML(it, g) {   // g: profit group (Stock list, or Buy's always-
     <div class="acts">${sellAct(it)}${`<button class="ed" aria-label="Edit #${esc(dno(it))}" onclick="editItem(${Number(it.no)})">✏️</button><button class="x" aria-label="Delete #${esc(dno(it))}" onclick="delItem(${Number(it.no)})">🗑️</button>`}</div></div>`;
 }
 // Projected profit of an unsynced purchase from the cached base (same rule as the sheet: base × purity × grams).
-const qSell = it => { const s = S(); return s && s.base ? s.base * it.purity * it.weightBhy / (s.bhyPerGram || 2) : null; };
+const qSell = it => { const s = S(); const base = OFFBASE != null ? OFFBASE : (s && s.base); return base ? base * it.purity * it.weightBhy / ((s && s.bhyPerGram) || 2) : null; };
 function qProfit(it) { const v = qSell(it); return v == null ? null : v - it.cost; }
 const liveSync = () => !isOffline() && connected();
 function qBadge(it) {
@@ -2483,6 +2556,7 @@ async function openRefine() {
     }
     if (j && j.preview) p = j.preview;
   } else p = localRefinePreview();
+  if (OFFBASE != null && p) p = Object.assign({}, p, { base: OFFBASE });
   render();
   if (!p || !p.count && !u.length) return toast('No items in stock');
   // v50: the list. Api.gs v50 sends the In stock items with the preview (fresh); else the stock this device has.
@@ -2495,10 +2569,11 @@ async function openRefine() {
       return `<label class="pick${k || !pick ? '' : ' off'}"><input type="checkbox" data-i="${i}"${on ? ' checked' : ''}${dis ? ' disabled' : ''} aria-label="Refine ${k ? '#' + esc(dno(it)) : 'item without a No.'}"><span class="body">${k ? pickLine(it) : `<b>No. –</b> · ${wt(it.weightBhy)} BHY · ${pct(it.purity)} · ${peso(it.cost)}`}</span></label>`; }).join('')
     + pend.map(it => `<label class="pick"><input type="checkbox" data-rid="${esc(it.rid)}" checked${pick ? '' : ' disabled'} aria-label="Refine unsynced purchase"><span class="body">${wt(it.weightBhy)} BHY · ${pct(it.purity)} · ${peso(it.cost)} <span class="badge">waiting to sync</span></span></label>`).join('');
   const offNote = hasReceipts() && !navigator.onLine ? `<div class="muted">You're offline. This refine will be saved on this device and sent when you're back online.</div>` : '';
+  const offEst = OFFBASE != null ? `<div class="muted">Estimates here use this device's offline base. The sheet still freezes its own base when this syncs.</div>` : '';
   const intro = pick
     ? `<div class="muted">Tick the items to refine. They move into a new batch, frozen at today's base, and go to the Archive tab. Unticked items stay In stock.</div>`
     : `<div class="muted">All ${count} In stock items move into a new batch, frozen at today's base, and go to the Archive tab.</div>`;
-  modal(`<h2>🔥 Batch refine</h2>${intro}${offNote}
+  modal(`<h2>🔥 Batch refine</h2>${intro}${offNote}${offEst}
     <div class="pickhd"><span class="muted" id="rpN">${count} in stock</span>${pick ? '<button type="button" class="btn light sm" id="rpAll">Select none</button>' : ''}</div>
     ${pick ? '' : `<div class="note rpnote" id="rpOld">Update the sheet script (Api.gs v50) to pick items. Until then Batch refine takes them all.</div>`}
     <div class="rpick" id="rpList">${rows}</div>
@@ -2569,7 +2644,7 @@ function refineTotals(items, p) {
     a.n++; a.raw += g; a.ref += g * q; a.cost += Number(x.cost) || 0;
     if (isFullPurity(q, fm)) a.high++; else { a.sRaw += g; a.sRef += g * q; } return a; }, { n: 0, raw: 0, ref: 0, cost: 0, high: 0, sRaw: 0, sRef: 0 });
   const feeEach = p && Number(p.count) > 0 && p.fee != null ? Number(p.fee) || 0 : Number(s.refiningFee) || 0;
-  const fee = t.n ? feeEach : 0, base = Number(p && p.base) || Number(ST && ST.base) || 0;
+  const fee = t.n ? feeEach : 0, base = OFFBASE != null ? OFFBASE : (Number(p && p.base) || Number(ST && ST.base) || 0);
   const div = Number(s.silverDivisor), mul = Number(s.silverMultiplier), rawPct = t.sRaw ? t.sRef / t.sRaw : 0;
   const silver = div && mul && t.sRef ? (t.sRef * rawPct / div) * mul - t.sRef : 0;
   const value = base ? t.ref * base : 0;
@@ -2579,7 +2654,7 @@ function refineTotals(items, p) {
 function localRefinePreview() {
   const t = rnTotals(), s = S() || {};
   const nos = (ST && ST.stock || []).map(x => Number(x.no)).filter(n => n > 0);
-  const base = Number(ST && ST.base) || 0, value = base ? t.ref * base : 0;
+  const base = estBase(), value = base ? t.ref * base : 0;
   return {
     count: (ST && ST.stock || []).length, nos,
     rawG: t.raw, refinedG: t.ref, cost: t.cost, fee: t.fee, costInclFee: t.cost + t.fee,
@@ -2609,6 +2684,7 @@ async function openGroup998() {
     }
   }
   if (!p) p = localRefinePreview();
+  if (OFFBASE != null && p) p = Object.assign({}, p, { base: OFFBASE });
   render();
   const below = ((ST && ST.stock) || []).length + (hasReceipts() ? unsyncedPurchases().length : 0) - pool.sheet.length - pool.pend.length;
   const defId = freeBatchId(p.defaultBatchId);
@@ -2738,7 +2814,7 @@ function openDirectSale(preset, existing) {
   const boxes = () => [...document.querySelectorAll('#dsList input')];
   const picked = () => boxes().filter(x => x.checked).map(x => x.dataset.no != null ? pool.sheet.find(it => String(it.no) === x.dataset.no) : pool.pend.find(it => it.rid === x.dataset.rid)).filter(Boolean);
   const upd = () => {
-    const sel = picked(), f = directFigures(sel, Number(ST && ST.base) || 0, null);
+    const sel = picked(), f = directFigures(sel, estBase(), null);
     $('#dsSum').textContent = sel.length ? `${sel.length} ticked · ${grams(f.grams)} g · cost ${peso(f.cost)}` : 'Nothing ticked';
     const all = $('#dsAll'); all.textContent = boxes().length && boxes().every(x => x.checked) ? 'Select none' : 'Select all';
     const go = $('#dsNext'); go.disabled = !sel.length; go.textContent = sel.length ? `Review ${sel.length} item${sel.length === 1 ? '' : 's'}` : 'Review sale';
@@ -2750,7 +2826,7 @@ function openDirectSale(preset, existing) {
 }
 function directReview(items, existing) {
   const preDate = existing && existing.sellDate ? existing.sellDate : todayISO();
-  const preBase = existing && existing.sellBase != null && existing.sellBase !== '' ? existing.sellBase : (hasNum(ST && ST.base) ? ST.base : '');
+  const preBase = existing && existing.sellBase != null && existing.sellBase !== '' ? existing.sellBase : (OFFBASE != null ? OFFBASE : (hasNum(ST && ST.base) ? ST.base : ''));
   const preAmt = existing && existing.actualAmt != null ? existing.actualAmt : '';
   const lines = items.map(it => `<div class="pick" style="cursor:default"><span class="body">${it.no > 0 ? pickLine(it) : `${wt(it.weightBhy)} BHY · ${pct(it.purity)} · ${peso(it.cost)} <span class="badge">waiting to sync</span>`}</span></div>`).join('');
   const off = !navigator.onLine ? `<div class="muted">You're offline. This sale will be saved on this device and sent when you're back online.</div>` : '';
@@ -2828,7 +2904,7 @@ function rnTotals() {
   return t;
 }
 const rnStored = () => { const v = load(RN_KEY); return typeof v === 'string' && v.trim() !== '' ? v : null; };
-const rnToday = () => hasNum(ST && ST.base) ? Number(ST.base).toFixed(2) : '';
+const rnToday = () => OFFBASE != null ? Number(OFFBASE).toFixed(2) : (hasNum(ST && ST.base) ? Number(ST.base).toFixed(2) : '');
 function rnFigsHTML(t) {
   return `<div><span>Items</span><b>${t.n}</b></div>
       <div><span>Raw weight</span><b>${grams(t.raw)} g</b></div>
@@ -2852,13 +2928,13 @@ function rnCardHTML() {
     <div class="sumlist" id="rnFigs">${rnFigsHTML(t)}</div>
     <label for="rnBase" style="margin-top:12px">Selling base price (₱/g)</label>
     <div class="cell rncell" id="rnCell"><input id="rnBase" class="bigin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(st != null ? st : rnToday())}" placeholder="${esc(rnToday() || '0.00')}"></div>
-    <div class="rnsrc"><span id="rnSrc">${st != null ? 'Your price' : `Today's base <b>${peso(ST.base)}</b>`}</span><button type="button" class="btn light sm" id="rnReset" onmousedown="event.preventDefault()" onclick="rnReset()">Use today's base</button></div>
+    <div class="rnsrc"><span id="rnSrc">${st != null ? 'Your price' : `Today's base <b>${peso(OFFBASE != null ? OFFBASE : ST.base)}</b>`}</span><button type="button" class="btn light sm" id="rnReset" onmousedown="event.preventDefault()" onclick="rnReset()">Use today's base</button></div>
     <div class="sumlist" id="rnOut">${rnOutHTML(t, st != null ? st : rnToday())}</div></div>`;
 }
 function rnUpdate() {   // live: only the estimate under the box is redrawn
   const el = $('#rnBase'), o = $('#rnOut'); if (!el || !o) return;
   o.innerHTML = rnOutHTML(rnTotals(), el.value); const st = rnStored();
-  $('#rnSrc').innerHTML = st != null ? 'Your price' : `Today's base <b>${peso(ST.base)}</b>`; applyEye();
+  $('#rnSrc').innerHTML = st != null ? 'Your price' : `Today's base <b>${peso(OFFBASE != null ? OFFBASE : ST.base)}</b>`; applyEye();
 }
 function rnReset() { localStorage.removeItem(RN_KEY); const el = $('#rnBase'); if (el) el.value = rnToday(); rnUpdate(); }
 function bindRN() {
@@ -3105,7 +3181,7 @@ function openBatchGroup(existing) {
   const boxes = () => [...document.querySelectorAll('#bgList input')];
   const picked = () => boxes().filter(x => x.checked).map(x => L.find(b => b.id === x.dataset.bid)).filter(Boolean);
   const upd = () => {
-    const sel = picked(), f = batchGroupFigures(sel, Number(ST && ST.base) || 0, null);
+    const sel = picked(), f = batchGroupFigures(sel, estBase(), null);
     $('#bgSum').textContent = sel.length ? `${sel.length} ticked · ${grams(f.g)} g refined · cost ${peso(f.c)}` : 'Nothing ticked';
     $('#bgAll').textContent = boxes().length && boxes().every(x => x.checked) ? 'Select none' : 'Select all';
     const go = $('#bgNext'); go.disabled = !sel.length; go.textContent = sel.length ? `Review ${sel.length} batch${sel.length === 1 ? '' : 'es'}` : 'Review sale';
@@ -3117,7 +3193,7 @@ function openBatchGroup(existing) {
 }
 function batchGroupReview(batches, existing) {
   const preDate = existing && existing.sellDate ? existing.sellDate : todayISO();
-  const preBase = existing && existing.sellBase != null && existing.sellBase !== '' ? existing.sellBase : (hasNum(ST && ST.base) ? ST.base : '');
+  const preBase = existing && existing.sellBase != null && existing.sellBase !== '' ? existing.sellBase : (OFFBASE != null ? OFFBASE : (hasNum(ST && ST.base) ? ST.base : ''));
   const preAmt = existing && existing.actualAmt != null ? existing.actualAmt : '';
   const lines = batches.map(b => `<div class="pick" style="cursor:default"><span class="body"><b>${esc(b.id)}</b> · ${grams(b.refinedG)} g refined · cost ${peso(b.costInclFee)}</span></div>`).join('');
   const off = !navigator.onLine ? `<div class="muted">You're offline. The batches stay on the Refining tab, and this sale is sent when you're back online.</div>` : '';
@@ -3355,7 +3431,7 @@ function openSale(id, existing) {
   if (pend && pend.uncertainAt && inflight === pend.rid) return toast('Sending this sale now. Try again in a moment.');
   const ev = b.status === 'Refining' ? beVals(b) : null;   // v22: the Base typed on the batch prefills the sell base
   const preDate = pend ? pend.sellDate : (/^\d{4}-\d{2}-\d{2}$/.test(b.sellDate) ? b.sellDate : todayISO());
-  const preBase = pend ? (pend.sellBase ?? '') : (b.sellBase ?? (ev && ev.base != null ? ev.base : (ST.base || '')));
+  const preBase = pend ? (pend.sellBase ?? '') : (b.sellBase ?? (ev && ev.base != null ? ev.base : (OFFBASE != null ? OFFBASE : (ST.base || ''))));
   const preAmt = pend ? (pend.actualAmt ?? '') : (b.actualAmt ?? '');
   const title = pend && !b.recorded ? 'Sale waiting to sync' : (b.recorded ? 'Correct sale' : 'Record sale');
   modal(`<h2>${title} · ${esc(id)}</h2><div class="muted">${grams(b.refinedG)} g refined (est.) · cost incl. fee ${peso(b.costInclFee)}${pend ? '. This sale is saved on this device and is not confirmed profit until it reaches the sheet.' : ''}.</div>
@@ -3430,7 +3506,7 @@ function stockRows() {
   return sheet.concat(local);
 }
 function stockSum(L) {
-  const base = Number(ST.base) || 0;
+  const base = estBase();
   const t = L.reduce((a, x) => { a.n++; a.g += x.grams; a.c += x.cost; a.v += base * x.purity * x.grams; a.l += x.local ? 1 : 0; return a; }, { n: 0, g: 0, c: 0, v: 0, l: 0 });
   t.p = t.v - t.c; return t;
 }
@@ -3499,7 +3575,7 @@ async function fcCheck() {   // after a Dashboard draw: lock each open batch's f
   if (changed && view === 'dash' && !$('#modal')) render();
 }
 function refRows() {
-  const base = Number(ST.base) || 0, fc = load(FC_KEY) || {};
+  const base = estBase(), fc = load(FC_KEY) || {};
   return (ST.batches || []).filter(b => b.status === 'Refining').map(b => {
     const a = beVals(b).actual, act = a != null && a > 0, ref = act ? a : Number(b.refinedG) || 0;
     return { id: b.id, n: Number(b.items) || 0, raw: Number(b.rawG) || 0, ref, act, c: batchCost(b, fc), v: base * ref };
@@ -3544,7 +3620,7 @@ function stockBoxesHTML() {
     <div class="stk main" id="dStock"><h3><span>Total in stock</span>${eyeBtn('dash:stock')}</h3>
       <div class="figs">
         <div><span>Items</span><b id="sCount" class="fit" data-fg="top"><span class="fv">${A.n}</span></b></div><div><span>Grams</span><b id="sGrams" class="fit" data-fg="top"><span class="fv">${grams(A.g)} g</span></b></div>
-        <div><span>Cost</span><b id="sCost" class="fit" data-fg="top"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value<small class="fsub" id="sValueAt">@ ${peso(ST.base)}/g</small></span><b id="sValue" class="fit" data-fg="top"><span class="fv">${peso(A.v)}</span></b></div>
+        <div><span>Cost</span><b id="sCost" class="fit" data-fg="top"><span class="fv">${peso(A.c)}</span></b></div><div><span>Est. value<small class="fsub" id="sValueAt">@ ${peso(OFFBASE != null ? OFFBASE : ST.base)}/g</small></span><b id="sValue" class="fit" data-fg="top"><span class="fv">${peso(A.v)}</span></b></div>
       </div>
       <div class="profrow"><span>Est. profit</span><b id="sProfit" class="fit">${prof(A.p, 'dash:stock')}</b></div>
       ${parts}</div>
@@ -3834,26 +3910,62 @@ function dashHTML() {
   </div></div></details><div class="muted" style="text-align:center;margin-top:12px">From the Dashboard tab · updated ${esc(whenTxt(lastSync))}</div>`;
 }
 
-// Manual base price
+// Manual base price. v57: an offline base is stored on this device only and never calls setBase.
+function readBaseInput() {
+  const v = parseNum($('#bb').value);
+  if (v === null || isNaN(v)) { toast('Enter the base price, e.g. 8250'); return null; }
+  if (v < 1000 || v > 50000) { toast('Base must be between ₱1,000 and ₱50,000 / g'); return null; }
+  return round2(v);
+}
 function openBase() {
   if (!connected()) return openSettings();
-  if (!ST || !ST.base) return toast('Loading from the sheet…');
-  modal(`<h2>Set base price</h2><div class="muted">Today's buying base per gram, after the ₱200 adjustment. It replaces the sheet's base until the next automatic update.</div>
-    <label for="bb">Base price (₱ / g)</label><input id="bb" class="basein" type="text" inputmode="decimal" autocomplete="off" value="${esc(Number(ST.base).toFixed(2))}">
-    <div class="muted" style="margin-top:6px">Now ${peso(ST.base)} / g · ${esc(srcTxt())}${ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}</div>
-    <button class="btn gold" id="bbsave">Save</button><button class="btn light" onclick="closeModal()">Cancel</button>`);
+  const sheet = shownSheetBase();
+  if (sheet == null && OFFBASE == null) return toast('Loading from the sheet…');
+  const off = isOffline();
+  const shown = OFFBASE != null ? OFFBASE : sheet;
+  const lead = off
+    ? "You're offline, so this price stays on this device. Quotes and estimates use it until a live sync brings the sheet's base back. The sheet is not changed."
+    : "Today's buying base per gram, after the ₱200 adjustment. Save it on the sheet, or use it on this device only.";
+  const now = OFFBASE != null
+    ? `Offline on this device ${peso(OFFBASE)} / g. The sheet keeps ${sheet != null ? peso(sheet) : '–'} (${esc(liveSrcLabel())}).`
+    : `Now ${peso(sheet)} / g · ${esc(srcTxt())}${ST && ST.lastUpdated ? ' · ' + esc(ST.lastUpdated) : ''}`;
+  const sheetBtn = OFFBASE != null ? '<button type="button" class="btn" id="bbSheet">Use sheet base</button>' : '';
+  const actions = off
+    ? `<button type="button" class="btn gold" id="bbOff">Use offline on this device only</button>${sheetBtn}`
+    : `<button type="button" class="btn gold" id="bbsave">Save to sheet</button><button type="button" class="btn" id="bbOff">Use offline on this device only</button>${sheetBtn}`;
+  modal(`<h2>Set base price</h2><div class="muted">${lead}</div>
+    <label for="bb">Base price (₱ / g)</label><input id="bb" class="basein" type="text" inputmode="decimal" autocomplete="off" value="${esc(Number(shown).toFixed(2))}">
+    <div class="muted" id="bbNow" style="margin-top:6px">${now}</div>
+    ${actions}<button type="button" class="btn light" id="bbCancel" onclick="closeModal()">Cancel</button>`);
   const el = $('#bb'); el.focus(); el.select();
-  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveBase(); } });
-  $('#bbsave').onclick = saveBase;
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (off) saveOffBase(); else saveBase(); } });
+  const save = $('#bbsave'); if (save) save.onclick = saveBase;
+  const local = $('#bbOff'); if (local) local.onclick = saveOffBase;
+  const back = $('#bbSheet'); if (back) back.onclick = useSheetBase;
 }
 async function saveBase() {
-  const v = parseNum($('#bb').value);
-  if (v === null || isNaN(v)) return toast('Enter the base price, e.g. 8250');
-  if (v < 1000 || v > 50000) return toast('Base must be between ₱1,000 and ₱50,000 / g');
-  const base = round2(v);
+  const base = readBaseInput();
+  if (base == null) return;
   if (!confirm(`Set base to ${peso(base)} / g?`)) return;
   const j = await write('setBase', { base }, $('#bbsave'));
   if (j) { closeModal(); render(); toast(safeMsg(j.message || 'Base updated ✓')); }
+}
+function saveOffBase() {
+  const base = readBaseInput();
+  if (base == null) return;
+  if (!confirm(`Use ${peso(base)} / g on this device only?\n\nThe sheet is not changed.`)) return;
+  setOffBase(base);
+  closeModal();
+  render();
+  toast(`Offline base ${peso(base)} / g on this device`, 3200);
+}
+function useSheetBase() {
+  if (OFFBASE == null) return;
+  const b = shownSheetBase();
+  clearOffBase();
+  closeModal();
+  render();
+  toast(b != null ? `Using the sheet base ${peso(b)} (${liveSrcLabel()})` : 'Using the sheet base', 3200);
 }
 $('#basePill').onclick = openBase;
 
@@ -3971,7 +4083,7 @@ function openSettings() {
     <label for="cu">Web app URL</label><input id="cu" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(CFG.url)}">
     <label for="ct">Token</label><input id="ct" type="password" autocomplete="off" value="${esc(CFG.token)}">
     <button class="btn gold" id="csave">Save &amp; test</button>
-    ${connected() && ST && ST.base ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${peso(ST.base)} / g)</span></button>` : ''}
+    ${connected() && (shownSheetBase() != null || OFFBASE != null) ? `<button class="btn" id="cbase">✏️ Set base price <span style="font-weight:600">(now ${peso(OFFBASE != null ? OFFBASE : shownSheetBase())} / g${OFFBASE != null ? ' · offline' : ''})</span></button>` : ''}
     ${connected() ? `<div class="bkbox" id="bkBox">${backupHTML()}</div>` : ''}
     ${pendingBoxHTML()}
     ${connected() ? `<button class="btn danger" id="cclear">Disconnect this device</button>` : ''}
@@ -3990,7 +4102,7 @@ function openSettings() {
     catch (e) { CFG = old; alert('Could not connect: ' + e.message); }
   };
   const cb = $('#cbase'); if (cb) cb.onclick = openBase;
-  const cc = $('#cclear'); if (cc) cc.onclick = () => { if (!confirm('Disconnect this device? Your sheet is not changed. Waiting items stay on this device.')) return; CFG = { url: '', token: '' }; ST = null; localStorage.removeItem(CFG_KEY); localStorage.removeItem(CACHE_KEY); closeModal(); render(); };
+  const cc = $('#cclear'); if (cc) cc.onclick = () => { if (!confirm('Disconnect this device? Your sheet is not changed. Waiting items stay on this device.')) return; CFG = { url: '', token: '' }; ST = null; clearOffBase(); localStorage.removeItem(CFG_KEY); localStorage.removeItem(CACHE_KEY); closeModal(); render(); };
   bindPendingBox();
 }
 function pendingBoxHTML() {
@@ -4090,6 +4202,10 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.ser
     exportObj: exportPendingObj, validate: validatePendingFile, importItems: importPendingItems, init: initOutbox,
     clear: async () => { Q = []; await persistOutbox(); },
     hasReceipts
+  };
+  window.__goldOff = {
+    active: () => OFFBASE, sheet: () => shownSheetBase(), today: () => (OFFBASE != null ? OFFBASE : shownSheetBase()),
+    source: () => ST && ST.source, label: () => liveSrcLabel(), offline: () => isOffline(), busy: () => busy
   };
 })();
 </script>
